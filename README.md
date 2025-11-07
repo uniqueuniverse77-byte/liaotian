@@ -1,14 +1,21 @@
 # Liaotian 聊天
 easy-to-host social platforms for everyone
 
-- [x] Post feed and customize profiles like X/Twitter
+- [x] Post on the feed and customize profiles like X/Twitter
 - [x] Messaging like Telegram/WhatsApp
-- [ ] User following/followers
+- [x] User following/followers
+- [x] User profiles via url parameters (e.g. /?liaotian)
+- [ ] Animated GIFs eligible for profile customization
 - [ ] Upload files
 - [ ] Embed links
 - [ ] Create and manage groups
 - [ ] Host audio and video calls
 
+### What makes LiaoTian (LT) so special from already existing social media/networking platforms?
+
+This is a project where **anyone can easily fork/clone and deploy their own** versions of this platform. This GitHub repository provides a sort of boilerplate template for making your own such platforms, in a way.
+Unlike Mastodon and other open-source and decentralized or fediverse alternatives like this, the code is **compiled into a static site**, meaning it can be easily **hosted on most free hosting providers** for $0. All it needs is a database connection via Supabase. The content **behaves as if it is dynamic and real-time**, thanks to both Vercel (as what we have used) and Supabase's real-time API features.
+Also to get started on developing your own version of LiaoTian, it's much simpler than most other "templates" out there, since it uses **only 7 files** for its actual codebase (as of now).
 
 ---
 
