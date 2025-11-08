@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase, Message, Profile, uploadMedia } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText } from 'lucide-react';
+import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link } from 'lucide-react';
 
 export const Messages = () => {
   const [conversations, setConversations] = useState<Profile[]>([]);
@@ -10,6 +10,7 @@ export const Messages = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [remoteUrl, setRemoteUrl] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,18 +74,18 @@ export const Messages = () => {
   };
 
   useEffect(() => {
-  const handleOpenDM = (e: any) => {
-    const profile = e.detail;
-    if (profile && profile.id !== user?.id) {
-      setSelectedUser(profile);
-      setShowSidebar(false);
-      setSearchQuery('');
-    }
-  };
+    const handleOpenDM = (e: any) => {
+      const profile = e.detail;
+      if (profile && profile.id !== user?.id) {
+        setSelectedUser(profile);
+        setShowSidebar(false);
+        setSearchQuery('');
+      }
+    };
 
-  window.addEventListener('openDirectMessage', handleOpenDM);
-  return () => window.removeEventListener('openDirectMessage', handleOpenDM);
-}, [user]);
+    window.addEventListener('openDirectMessage', handleOpenDM);
+    return () => window.removeEventListener('openDirectMessage', handleOpenDM);
+  }, [user]);
 
   useEffect(() => {
     if (user) loadConversations();
@@ -205,7 +206,7 @@ export const Messages = () => {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim() && !file || !selectedUser) return;
+    if (!content.trim() && !file && !remoteUrl.trim() || !selectedUser) return;
 
     setIsUploading(true);
     setUploadProgress(0);
@@ -223,6 +224,15 @@ export const Messages = () => {
       }
       media_url = result.url;
       media_type = result.type;
+    } else if (remoteUrl.trim()) {
+      media_url = remoteUrl.trim();
+      if (remoteUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+        media_type = 'image';
+      } else if (remoteUrl.match(/\.(mp4|webm|mov|avi)$/i)) {
+        media_type = 'video';
+      } else {
+        media_type = 'document';
+      }
     }
 
     sendTypingStatus(false);
@@ -241,6 +251,7 @@ export const Messages = () => {
     if (data) {
       setContent('');
       setFile(null);
+      setRemoteUrl('');
       setIsUploading(false);
       setUploadProgress(0);
     }
@@ -261,20 +272,36 @@ export const Messages = () => {
   const displayList = searchQuery ? searchResults : conversations;
 
   const getPreview = () => {
-    if (!file) return null;
-    const url = URL.createObjectURL(file);
-    if (file.type.startsWith('image/')) {
-      return <img src={url} className="max-h-32 rounded-lg" alt="Preview" />;
+    if (file) {
+      const url = URL.createObjectURL(file);
+      if (file.type.startsWith('image/')) {
+        return <img src={url} className="max-h-32 rounded-lg" alt="Preview" />;
+      }
+      if (file.type.startsWith('video/')) {
+        return <video src={url} className="max-h-32 rounded-lg" controls />;
+      }
+      return (
+        <div className="flex items-center gap-2 text-sm">
+          <FileText size={16} />
+          <span>{file.name}</span>
+        </div>
+      );
     }
-    if (file.type.startsWith('video/')) {
-      return <video src={url} className="max-h-32 rounded-lg" controls />;
+    if (remoteUrl) {
+      if (remoteUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+        return <img src={remoteUrl} className="max-h-32 rounded-lg" alt="Remote preview" />;
+      }
+      if (remoteUrl.match(/\.(mp4|webm|mov|avi)$/i)) {
+        return <video src={remoteUrl} className="max-h-32 rounded-lg" controls />;
+      }
+      return (
+        <div className="flex items-center gap-2 text-sm">
+          <Link size={16} />
+          <span className="truncate max-w-[150px]">{remoteUrl}</span>
+        </div>
+      );
     }
-    return (
-      <div className="flex items-center gap-2 text-sm">
-        <FileText size={16} />
-        <span>{file.name}</span>
-      </div>
-    );
+    return null;
   };
 
   return (
@@ -417,14 +444,17 @@ export const Messages = () => {
             </div>
 
             <form onSubmit={sendMessage} className="p-3 bg-white border-t border-gray-200">
-              {file && (
+              {(file || remoteUrl) && (
                 <div className="mb-3 p-3 bg-gray-50 rounded-lg flex items-center justify-between">
                   <div className="flex-1 pr-2">
                     {getPreview()}
                   </div>
                   <button
                     type="button"
-                    onClick={() => setFile(null)}
+                    onClick={() => {
+                      setFile(null);
+                      setRemoteUrl('');
+                    }}
                     className="p-1 hover:bg-gray-200 rounded-full transition"
                   >
                     <X size={18} />
@@ -445,7 +475,10 @@ export const Messages = () => {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*,video/*,.pdf,.doc,.docx,.txt"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] || null);
+                  setRemoteUrl('');
+                }}
                 className="hidden"
               />
 
@@ -459,11 +492,18 @@ export const Messages = () => {
                   <Paperclip size={24} />
                 </button>
 
-                {file && (
-                  <span className="text-sm text-gray-600 truncate max-w-[100px]">
-                    {file.name}
-                  </span>
-                )}
+                <div className="flex-1 flex items-center gap-1">
+                  <input
+                    type="url"
+                    value={remoteUrl}
+                    onChange={(e) => {
+                      setRemoteUrl(e.target.value);
+                      setFile(null);
+                    }}
+                    placeholder="Paste media URL..."
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:border-orange-500"
+                  />
+                </div>
 
                 <input
                   type="text"
@@ -475,8 +515,8 @@ export const Messages = () => {
 
                 <button
                   type="submit"
-                  disabled={isUploading || (!content.trim() && !file)}
-                  className={`p-2 rounded-full transition ${isUploading || (!content.trim() && !file) ? 'bg-gray-300 text-gray-500' : 'bg-orange-500 text-white hover:bg-orange-600'}`}
+                  disabled={isUploading || (!content.trim() && !file && !remoteUrl.trim())}
+                  className={`p-2 rounded-full transition ${isUploading || (!content.trim() && !file && !remoteUrl.trim()) ? 'bg-gray-300 text-gray-500' : 'bg-orange-500 text-white hover:bg-orange-600'}`}
                 >
                   <Send size={24} />
                 </button>
