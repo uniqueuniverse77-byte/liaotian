@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase, Post, uploadMedia } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, BadgeCheck, Edit3, Image, FileText, X, Paperclip } from 'lucide-react';
+import { Send, BadgeCheck, Edit3, Image, FileText, X, Paperclip, Link } from 'lucide-react';
 
 const FOLLOW_ONLY_FEED = import.meta.env.VITE_FOLLOW_ONLY_FEED === 'true';
 
@@ -10,6 +10,7 @@ export const Feed = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [content, setContent] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [remoteUrl, setRemoteUrl] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -21,16 +22,16 @@ export const Feed = () => {
   const loadPosts = async () => {
     let query = supabase.from('posts').select('*, profiles(*)').order('created_at', { ascending: false });
     if (FOLLOW_ONLY_FEED && user) {
-    const { data: following } = await supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', user.id);
+      const { data: following } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', user.id);
 
-    const followingIds = following?.map(f => f.following_id) || [];
-    const allowedIds = [...followingIds, user.id];
+      const followingIds = following?.map(f => f.following_id) || [];
+      const allowedIds = [...followingIds, user.id];
 
-    query = query.in('user_id', allowedIds);
-  }
+      query = query.in('user_id', allowedIds);
+    }
     const { data } = await query;
     setPosts(data || []);
   };
@@ -40,20 +41,20 @@ export const Feed = () => {
 
     const channel = supabase.channel('public:posts').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, async (payload) => {
       if (FOLLOW_ONLY_FEED && user) {
-    if (payload.new.user_id === user.id) {
-      const { data } = await supabase.from('posts').select('*, profiles(*)').eq('id', payload.new.id).single();
-      if (data) setPosts(current => [data, ...current]);
-      return;
-    }
+        if (payload.new.user_id === user.id) {
+          const { data } = await supabase.from('posts').select('*, profiles(*)').eq('id', payload.new.id).single();
+          if (data) setPosts(current => [data, ...current]);
+          return;
+        }
 
-    const { data: followData } = await supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', user.id)
-      .eq('following_id', payload.new.user_id);
+        const { data: followData } = await supabase
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', user.id)
+          .eq('following_id', payload.new.user_id);
 
-    if (!followData?.length) return;
-  }
+        if (!followData?.length) return;
+      }
       const { data } = await supabase.from('posts').select('*, profiles(*)').eq('id', payload.new.id).single();
       if (data) setPosts(current => [data, ...current]);
     }).subscribe();
@@ -72,7 +73,7 @@ export const Feed = () => {
 
   const createPost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim() && !file) return;
+    if (!content.trim() && !file && !remoteUrl.trim()) return;
 
     setIsUploading(true);
     setUploadProgress(0);
@@ -90,6 +91,15 @@ export const Feed = () => {
       }
       media_url = result.url;
       media_type = result.type;
+    } else if (remoteUrl.trim()) {
+      media_url = remoteUrl.trim();
+      if (remoteUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+        media_type = 'image';
+      } else if (remoteUrl.match(/\.(mp4|webm|mov|avi)$/i)) {
+        media_type = 'video';
+      } else {
+        media_type = 'document';
+      }
     }
 
     await supabase
@@ -103,6 +113,7 @@ export const Feed = () => {
 
     setContent('');
     setFile(null);
+    setRemoteUrl('');
     setIsExpanded(false);
     setIsUploading(false);
     setUploadProgress(0);
@@ -117,20 +128,36 @@ export const Feed = () => {
   };
 
   const getPreview = () => {
-    if (!file) return null;
-    const url = URL.createObjectURL(file);
-    if (file.type.startsWith('image/')) {
-      return <img src={url} className="max-h-48 rounded-lg object-cover" alt="Preview" />;
+    if (file) {
+      const url = URL.createObjectURL(file);
+      if (file.type.startsWith('image/')) {
+        return <img src={url} className="max-h-48 rounded-lg object-cover" alt="Preview" />;
+      }
+      if (file.type.startsWith('video/')) {
+        return <video src={url} className="max-h-48 rounded-lg" controls />;
+      }
+      return (
+        <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg">
+          <FileText size={20} />
+          <span className="text-sm">{file.name}</span>
+        </div>
+      );
     }
-    if (file.type.startsWith('video/')) {
-      return <video src={url} className="max-h-48 rounded-lg" controls />;
+    if (remoteUrl) {
+      if (remoteUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+        return <img src={remoteUrl} className="max-h-48 rounded-lg object-cover" alt="Remote preview" />;
+      }
+      if (remoteUrl.match(/\.(mp4|webm|mov|avi)$/i)) {
+        return <video src={remoteUrl} className="max-h-48 rounded-lg" controls />;
+      }
+      return (
+        <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg">
+          <Link size={20} />
+          <span className="text-sm truncate max-w-[200px]">{remoteUrl}</span>
+        </div>
+      );
     }
-    return (
-      <div className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg">
-        <FileText size={20} />
-        <span className="text-sm">{file.name}</span>
-      </div>
-    );
+    return null;
   };
 
   return (
@@ -147,14 +174,17 @@ export const Feed = () => {
               autoFocus
             />
             
-            {file && (
+            {(file || remoteUrl) && (
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex-1">
                   {getPreview()}
                 </div>
                 <button
                   type="button"
-                  onClick={() => setFile(null)}
+                  onClick={() => {
+                    setFile(null);
+                    setRemoteUrl('');
+                  }}
                   className="ml-2 p-1 hover:bg-gray-200 rounded-full transition"
                 >
                   <X size={18} />
@@ -175,11 +205,14 @@ export const Feed = () => {
               ref={fileInputRef}
               type="file"
               accept="image/*,video/*,.pdf,.doc,.docx,.txt"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] || null);
+                setRemoteUrl('');
+              }}
               className="hidden"
             />
 
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -187,18 +220,22 @@ export const Feed = () => {
               >
                 <Paperclip size={16} /> {file ? 'Change File' : 'Attach'}
               </button>
-              {file && (
-                <button
-                  type="button"
-                  onClick={() => setFile(null)}
-                  className="text-red-500 hover:text-red-700 text-sm"
-                >
-                  Remove
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">or</span>
+                <input
+                  type="url"
+                  value={remoteUrl}
+                  onChange={(e) => {
+                    setRemoteUrl(e.target.value);
+                    setFile(null);
+                  }}
+                  placeholder="Paste image/video/file URL..."
+                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-full focus:outline-none focus:border-orange-500"
+                />
+              </div>
               <button
                 type="submit"
-                disabled={isUploading || (!content.trim() && !file)}
+                disabled={isUploading || (!content.trim() && !file && !remoteUrl.trim())}
                 className="ml-auto bg-orange-500 disabled:bg-gray-300 text-white px-6 py-2 rounded-full hover:bg-orange-600 flex items-center gap-2 font-semibold transition"
               >
                 <Send size={16} />
