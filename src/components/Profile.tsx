@@ -42,7 +42,7 @@ export const Profile = ({ userId, onMessage }: { userId?: string; onMessage?: (p
       .from('profiles')
       .select('*')
       .eq('id', targetUserId)
-      const single();
+      .single();
     setProfile(data);
     if (data) {
       setDisplayName(data.display_name);
