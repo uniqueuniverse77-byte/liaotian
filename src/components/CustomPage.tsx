@@ -67,7 +67,7 @@ export const CustomPage = ({ slug }: CustomPageProps) => {
               </div>
               <p className="text-[rgb(var(--color-text-secondary))]">@{profile?.username || 'liaotian'}</p>
               <p className="text-sm text-[rgb(var(--color-text-secondary))] mt-1">
-                <a href="/">Sign Up</a> for LiaoTian
+                <a href="/" className="text-[rgb(var(--color-accent))]">Sign Up</a> for LiaoTian
               </p>
             </div>
           </div>
