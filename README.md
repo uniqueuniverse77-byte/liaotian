@@ -2,7 +2,7 @@
 easy-to-host social platforms for everyone
 
 ```
-Current version: 1.0.3
+Current version: 1.0.4
 ```
 
 - [x] Post on the feed and customize profiles like X/Twitter
@@ -12,6 +12,9 @@ Current version: 1.0.3
 - [x] Animated GIFs eligible for profile customization
 - [x] Upload files (max 10 MB)
 - [x] Upload images, videos, documents (txt, pdf, doc/x)
+- [x] User settings (to change username, email, password, etc.)
+- [x] User verification requests
+- [x] Custom themes
 - [ ] Embed links
 - [ ] Create and manage groups
 - [ ] Host audio and video calls
@@ -37,7 +40,8 @@ If you just want to create an account on **LiaoTian** (our official deployment) 
 5. If all steps are correct, you should be able to see your own instance of LiaoTian ready and deployed! Have fun customizing it to your needs.
 
 ## 🎨 Customization options
-Currently, the following features can be customized by inserting/modifying the following environment vaiables on your deployment (e.g. Vercel):
-1. **`VITE_FOLLOW_ONLY_FEED`** = `true` (will show only followed users' posts in the feed), `false` or missing (will show all posts from all users)
+1. Currently, the following features can be customized by inserting/modifying the following environment vaiables on your deployment (e.g. Vercel):
+   - **`VITE_FOLLOW_ONLY_FEED`** = `true` (will show only followed users' posts in the feed), `false` or missing (will show all posts from all users)
+2. Also you can modify `src/index.css` to customize the color palettes and themes to your wish.
 
 [LiaoTian](https://github.com/huanmux/liaotian) is a digital product brand/project by [Mux ZiZhiZhe Co.](https://mux8.com/zzz) under [HuanMux](https://www.linkedin.com/company/huanmux).
