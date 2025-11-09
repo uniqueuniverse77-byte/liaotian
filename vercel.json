@@ -1,11 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/pages/(.*)",
-      "destination": "/pages/$1"
+      "source": "/pages/:slug",
+      "destination": "/pages/:slug.md"
     },
     {
-      "source": "/(.*)",
+      "source": "/:slug",
       "destination": "/index.html"
     }
   ],
