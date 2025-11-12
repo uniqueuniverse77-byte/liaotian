@@ -2,7 +2,7 @@
 easy-to-host social platforms for everyone
 
 ```
-Current version: 1.0.5B
+Current version: 1.0.6
 ```
 
 ### What makes LiaoTian (LT) so special from already existing social media/networking platforms?
@@ -39,14 +39,14 @@ If you just want to create an account on **LiaoTian** (our official deployment) 
 - [x] User verification requests
 - [x] Custom themes
 - [x] Custom pages/sections
+- [x] Deleting own posts from profile, via 3-dots context menu per post
+- [x] Replying to messages
+- [x] Online status green dots
 - [ ] Embed links
 - [ ] Create and manage groups
 - [ ] Host audio and video calls
 - [ ] Posting long-form content, e.g. blogs
 - [ ] Comments and replies on posts (in a comment modal)
-- [ ] Deleting own posts from profile, via 3-dots context menu per post
-- [ ] Replying to messages
-- [ ] Online status green dots
 - [ ] Notification system (with "clear all" button to easily clear from database, too)
 - [ ] Groupchats
 - [ ] Hashtags
@@ -57,7 +57,6 @@ If you just want to create an account on **LiaoTian** (our official deployment) 
 - [ ] removing a follower from own Profile doesn't make changes to database for some reason
 - [ ] Messaging section soft errors (406, 4XX)
 - [ ] clicking on chat button couldn't utilize the url param for user to directly open conversation with someone
-- [ ] Mobile UI for Messages cuts off overflow from right side
 
 ---
 
