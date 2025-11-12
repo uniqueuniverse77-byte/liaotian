@@ -19,6 +19,28 @@ export const Feed = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [showLightbox, setShowLightbox] = useState(false);
+  const [lightboxMediaUrl, setLightboxMediaUrl] = useState('');
+  const [lightboxMediaType, setLightboxMediaType] = useState<'image' | 'video' | null>(null);
+
+  const openLightbox = (url: string, type: 'image' | 'video') => {
+    setLightboxMediaUrl(url);
+    setLightboxMediaType(type);
+    setShowLightbox(true);
+  };
+
+  const formatTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const isOnline = (lastSeen: string | null | undefined) => {
+    if (!lastSeen) return false;
+    const now = new Date().getTime();
+    const lastSeenTime = new Date(lastSeen).getTime();
+    const diff = now - lastSeenTime;
+    return diff < 300000; // 5 minutes
+  };
+
   const loadPosts = async () => {
     let query = supabase.from('posts').select('*, profiles(*)').order('created_at', { ascending: false });
     if (FOLLOW_ONLY_FEED && user) {
@@ -170,7 +192,7 @@ export const Feed = () => {
               onChange={(e) => setContent(e.target.value)}
               placeholder="What's happening?"
               rows={3}
-              className="w-full px-4 py-3 border border-[rgb(var(--color-border))] rounded-2xl focus:outline-none focus:border-[rgb(var(--color-accent))] resize-none text-[rgb(var(--color-text))]"
+              className="w-full px-4 py-3 border border-[rgb(var(--color-border))] bg-[rgb(var(--color-surface))] rounded-2xl focus:outline-none focus:border-[rgb(var(--color-accent))] resize-none text-[rgb(var(--color-text))]"
               autoFocus
             />
             
@@ -230,7 +252,7 @@ export const Feed = () => {
                     setFile(null);
                   }}
                   placeholder="Paste image/video/file URL..."
-                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-[rgb(var(--color-border))] rounded-full focus:outline-none focus:border-[rgb(var(--color-accent))] text-[rgb(var(--color-text))]"
+                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-[rgb(var(--color-border))] bg-[rgb(var(--color-surface))] rounded-full focus:outline-none focus:border-[rgb(var(--color-accent))] text-[rgb(var(--color-text))]"
                 />
               </div>
               <button
@@ -263,12 +285,15 @@ export const Feed = () => {
         {posts.map((post) => (
           <div key={post.id} className="border-b border-[rgb(var(--color-border))] p-4 hover:bg-[rgb(var(--color-surface-hover))] transition bg-[rgb(var(--color-surface))]" >
             <div className="flex gap-4 items-start">
-              <button onClick={() => goToProfile(post.user_id)} className="flex-shrink-0">
+              <button onClick={() => goToProfile(post.user_id)} className="flex-shrink-0 relative">
                 <img
                   src={post.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.profiles?.username}`}
                   className="w-12 h-12 rounded-full hover:opacity-80 transition"
                   alt="Avatar"
                 />
+                {isOnline(post.profiles?.last_seen) && (
+                  <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-[rgb(var(--color-surface))] rounded-full" />
+                )}
               </button>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1 flex-wrap">
@@ -277,13 +302,18 @@ export const Feed = () => {
                   </button>
                   {post.profiles?.verified && <BadgeCheck size={16} className="text-[rgb(var(--color-accent))]" />}
                   <span className="text-[rgb(var(--color-text-secondary))] text-sm">@{post.profiles?.username}</span>
-                  <span className="text-[rgb(var(--color-text-secondary))] text-sm">· {new Date(post.created_at).toLocaleDateString()}</span>
+                  <span className="text-[rgb(var(--color-text-secondary))] text-sm">· {new Date(post.created_at).toLocaleDateString()} at {formatTime(post.created_at)}</span>
                 </div>
                 <p className="mt-1 whitespace-pre-wrap break-words text-[rgb(var(--color-text))]" >{post.content}</p>
                 {post.media_url && (
                   <div className="mt-3">
                     {post.media_type === 'image' && (
-                      <img src={post.media_url} className="rounded-2xl max-h-96 object-cover w-full" alt="Post" />
+                      <img 
+                        src={post.media_url} 
+                        className="rounded-2xl max-h-96 object-cover w-full cursor-pointer transition hover:opacity-90" 
+                        alt="Post" 
+                        onClick={() => openLightbox(post.media_url, 'image')}
+                      />
                     )}
                     {post.media_type === 'video' && (
                       <video controls className="rounded-2xl max-h-96 w-full">
@@ -308,6 +338,39 @@ export const Feed = () => {
           </div>
         ))}
       </div>
+
+      {showLightbox && lightboxMediaUrl && (
+        <div 
+          className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setShowLightbox(false)}
+        >
+          <div className="max-w-full max-h-full" onClick={(e) => e.stopPropagation()}>
+            {lightboxMediaType === 'image' && (
+              <img 
+                src={lightboxMediaUrl} 
+                className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" 
+                alt="Full size view"
+              />
+            )}
+            {lightboxMediaType === 'video' && (
+              <video 
+                controls 
+                autoPlay
+                className="max-w-full max-h-[90vh] rounded-2xl"
+              >
+                <source src={lightboxMediaUrl} />
+                Your browser does not support the video tag.
+              </video>
+            )}
+          </div>
+          <button 
+            onClick={() => setShowLightbox(false)}
+            className="absolute top-4 right-4 p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition"
+          >
+            <X size={24} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

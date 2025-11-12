@@ -2,13 +2,24 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase, Message, Profile, uploadMedia } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link } from 'lucide-react';
+import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link, CornerUpLeft } from 'lucide-react';
+
+// Define a type that includes the possible joined reply data
+type AppMessage = Message & {
+  reply_to?: {
+    id: string;
+    content: string;
+    sender_id: string;
+    media_type?: string | null; // <--- MODIFICATION: Added media_type
+  } | null;
+};
 
 export const Messages = () => {
   const [conversations, setConversations] = useState<Profile[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<AppMessage[]>([]);
   const [content, setContent] = useState('');
+  const [replyingTo, setReplyingTo] = useState<AppMessage | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [remoteUrl, setRemoteUrl] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -16,6 +27,8 @@ export const Messages = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [showMediaMenu, setShowMediaMenu] = useState(false);
+  const [mediaInputMode, setMediaInputMode] = useState<'file' | 'url' | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,6 +37,55 @@ export const Messages = () => {
   const outgoingTypingChannelRef = useRef<any>(null);
 
   const { user } = useAuth();
+
+  // --- ONLINE STATUS CHECKER ---
+  const isUserOnline = (lastSeen: string | null | undefined): boolean => {
+    if (!lastSeen) return false;
+    const lastSeenDate = new Date(lastSeen);
+    const now = new Date();
+    // Consider online if last_seen is within the last 5 minutes (300,000 ms)
+    return (now.getTime() - lastSeenDate.getTime()) < 300000;
+  };
+  // -----------------------------
+
+  // --- LAST SEEN FORMATTER MODIFICATION START ---
+  const formatLastSeen = (lastSeen: string | null | undefined): string | null => {
+    if (!lastSeen) return null;
+
+    const lastSeenDate = new Date(lastSeen);
+    const now = new Date();
+    const diffMs = now.getTime() - lastSeenDate.getTime();
+
+    // Use the existing 5-minute rule for "online"
+    const FIVE_MINUTES = 300000;
+    if (diffMs < FIVE_MINUTES) return null;
+
+    const diffSeconds = Math.floor(diffMs / 1000);
+    
+    const days = Math.floor(diffSeconds / (60 * 60 * 24));
+    const hours = Math.floor((diffSeconds % (60 * 60 * 24)) / (60 * 60));
+    const minutes = Math.floor((diffSeconds % (60 * 60)) / 60);
+
+    let parts = [];
+    if (days > 0) {
+        // Show Days and the next most significant part (Hours)
+        parts.push(`${days} day${days > 1 ? 's' : ''}`);
+        if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+        else if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
+    } else if (hours > 0) {
+        // Show Hours and Minutes
+        parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+        if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
+    } else if (minutes > 0) {
+        // Show only Minutes
+        parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) return null; 
+
+    return `Last seen ${parts.join(' ')} ago`;
+  };
+  // --- LAST SEEN FORMATTER MODIFICATION END ---
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,8 +111,8 @@ export const Messages = () => {
         sender_id,
         recipient_id,
         created_at,
-        sender:profiles!sender_id(id, username, display_name, avatar_url, verified),
-        recipient:profiles!recipient_id(id, username, display_name, avatar_url, verified)
+        sender:profiles!sender_id(id, username, display_name, avatar_url, verified, last_seen),
+        recipient:profiles!recipient_id(id, username, display_name, avatar_url, verified, last_seen)
       `)
       .or(`sender_id.eq.${user!.id},recipient_id.eq.${user!.id}`)
       .order('created_at', { ascending: false });
@@ -132,13 +194,32 @@ export const Messages = () => {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
-          const msg = payload.new as Message;
+        async (payload) => { // Make async
+          const msg = payload.new as AppMessage;
           if (
             (msg.sender_id === user!.id && msg.recipient_id === selectedUser.id) ||
             (msg.sender_id === selectedUser.id && msg.recipient_id === user!.id)
           ) {
-            setMessages((prev) => [...prev, msg]);
+            
+            // --- MODIFICATION START ---
+            let finalMsg = msg;
+            // If it's a reply, fetch the replied-to message details.
+            if (finalMsg.reply_to_id) {
+              
+              const { data: repliedToMsgData } = await supabase
+                .from('messages')
+                .select('id, content, sender_id, media_type') // <--- MODIFICATION: Added media_type
+                .eq('id', finalMsg.reply_to_id)
+                .single();
+              
+              if (repliedToMsgData) {
+                // Manually assign the fetched reply data to the payload object
+                finalMsg = { ...finalMsg, reply_to: repliedToMsgData } as AppMessage; 
+              }
+            }
+            // --- MODIFICATION END ---
+
+            setMessages((prev) => [...prev, finalMsg]); // Add the potentially modified message
             scrollToBottom();
             loadConversations();
           }
@@ -244,6 +325,7 @@ export const Messages = () => {
         content,
         media_url,
         media_type,
+        reply_to_id: replyingTo ? replyingTo.id : null,
       })
       .select()
       .single();
@@ -252,22 +334,27 @@ export const Messages = () => {
       setContent('');
       setFile(null);
       setRemoteUrl('');
+      setReplyingTo(null);
       setIsUploading(false);
       setUploadProgress(0);
+      setMediaInputMode(null);
     }
   };
 
   const loadMessages = async (recipientId: string) => {
     const { data } = await supabase
       .from('messages')
-      .select('*')
+      // --- FIX: Ensure media_type is selected in the join for reply_to messages ---
+      .select('*, reply_to:messages!reply_to_id(id, content, sender_id, media_type)')
       .or(
         `and(sender_id.eq.${user!.id},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${user!.id})`
       )
       .order('created_at', { ascending: true });
-    setMessages(data || []);
+    setMessages(data as AppMessage[] || []);
     setTimeout(scrollToBottom, 100);
   };
+
+
 
   const displayList = searchQuery ? searchResults : conversations;
 
@@ -305,7 +392,7 @@ export const Messages = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[rgb(var(--color-background))] overflow-hidden">
+    <div className="flex h-screen mb-[-40] bg-[rgb(var(--color-background))] overflow-hidden">
       <div className={`w-full md:w-96 bg-[rgb(var(--color-surface))] border-r border-[rgb(var(--color-border))] flex-shrink-0 flex flex-col transition-transform duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} md:relative fixed inset-y-0 left-0 z-40 md:z-auto`}>
         <div className="p-4 border-b border-[rgb(var(--color-border))] sticky top-0 bg-[rgb(var(--color-surface))] z-10">
           <h2 className="text-3xl font-extrabold text-[rgb(var(--color-text))] mb-4">Chats</h2>
@@ -338,17 +425,30 @@ export const Messages = () => {
               }}
               className={`w-full flex items-center gap-3 p-4 transition border-b border-[rgb(var(--color-border))] ${selectedUser?.id === u.id ? 'bg-[rgb(var(--color-surface-hover))]' : 'hover:bg-[rgb(var(--color-surface-hover))]'}`}
             >
-              <img
-                src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`}
-                className="w-14 h-14 rounded-full object-cover"
-                alt=""
-              />
+              <div className="relative">
+                <img
+                  src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`}
+                  className="w-14 h-14 rounded-full object-cover"
+                  alt=""
+                />
+                {isUserOnline(u.last_seen) && (
+                  <div
+                    className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full ring-2 ring-[rgb(var(--color-surface))]"
+                  />
+                )}
+              </div>
               <div className="text-left flex-1 min-w-0">
                 <div className="font-semibold flex items-center gap-1 truncate text-[rgb(var(--color-text))]">
                   {u.display_name}
                   {u.verified && <BadgeCheck size={16} className="text-[rgb(var(--color-accent))] flex-shrink-0" />}
                 </div>
-                <div className="text-sm text-[rgb(var(--color-text-secondary))] truncate">@{u.username}</div>
+                {/* MODIFICATION: Display online status or last seen time in place of @username */}
+                <div className="text-sm text-[rgb(var(--color-text-secondary))] truncate">
+                  {isUserOnline(u.last_seen)
+                    ? 'Online'
+                    : formatLastSeen(u.last_seen) || `@${u.username}`
+                  }
+                </div>
               </div>
             </button>
           ))}
@@ -363,17 +463,30 @@ export const Messages = () => {
                 <ArrowLeft size={24} className="text-[rgb(var(--color-text-secondary))]" />
               </button>
               <button onClick={() => goToProfile(selectedUser.id)} className="flex items-center gap-3 flex-1 min-w-0">
-                <img
-                  src={selectedUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.username}`}
-                  className="w-10 h-10 rounded-full object-cover"
-                  alt=""
-                />
+                <div className="relative">
+                  <img
+                    src={selectedUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.username}`}
+                    className="w-10 h-10 rounded-full object-cover"
+                    alt=""
+                  />
+                  {isUserOnline(selectedUser.last_seen) && (
+                    <div
+                      className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-[rgb(var(--color-surface))]"
+                    />
+                  )}
+                </div>
                 <div className="text-left min-w-0">
                   <div className="font-bold flex items-center gap-1 truncate text-[rgb(var(--color-text))]">
                     {selectedUser.display_name}
                     {selectedUser.verified && <BadgeCheck size={16} className="text-[rgb(var(--color-accent))] flex-shrink-0" />}
                   </div>
-                  <div className="text-sm text-[rgb(var(--color-text-secondary))] truncate">@{selectedUser.username}</div>
+                  {/* MODIFICATION: Display online status or last seen time in place of @username */}
+                  <div className="text-sm text-[rgb(var(--color-text-secondary))] truncate">
+                    {isUserOnline(selectedUser.last_seen)
+                      ? 'Online'
+                      : formatLastSeen(selectedUser.last_seen) || `@${selectedUser.username}`
+                    }
+                  </div>
                 </div>
               </button>
             </div>
@@ -382,15 +495,74 @@ export const Messages = () => {
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex ${msg.sender_id === user!.id ? 'justify-end' : 'justify-start'}`}
+                  className={`flex items-center gap-2 group ${msg.sender_id === user!.id ? 'justify-end' : 'justify-start'}`}
                 >
+                  {/* Show reply icon on the left for sent messages */}
+                  {msg.sender_id === user!.id && (
+                    <button
+                      onClick={() => setReplyingTo(msg)}
+                      className="p-1 rounded-full text-[rgb(var(--color-text-secondary))] opacity-0 group-hover:opacity-100 transition hover:bg-[rgb(var(--color-surface-hover))]"
+                      title="Reply"
+                    >
+                      <CornerUpLeft size={16} />
+                    </button>
+                  )}
+
                   <div
-                    className={`max-w-[80%] md:max-w-[65%] px-3 py-2 rounded-xl shadow-md ${
+                    className={`max-w-[90%] sm:max-w-[60%] md:max-w-[65%] px-3 py-2 rounded-xl shadow-md ${
                       msg.sender_id === user!.id
                         ? 'bg-[rgb(var(--color-accent))] text-[rgb(var(--color-text-on-primary))] rounded-br-none'
                         : 'bg-[rgb(var(--color-surface))] text-[rgb(var(--color-text))] border border-[rgb(var(--color-border))] rounded-tl-none'
                     }`}
                   >
+                    {/* --- MODIFICATION START --- */}
+                    {/* Only render this block if reply_to_id exists (this handles the null check) */}
+                    {msg.reply_to_id && (() => {
+                      // Find the replied-to message. Use joined data first, fallback to in-memory search.
+                      // This ensures that after a refresh (joined data present) or a new message 
+                      // (subscription-fetched data present) or a very recent message 
+                      // (in-memory search possible), the content is available.
+                      const repliedToMsg = msg.reply_to ? msg.reply_to : messages.find(m => m.id === msg.reply_to_id);
+                      
+                      // The message won't render the reply block if repliedToMsg is null, 
+                      // which covers the case where reply_to_id is present but the message details aren't found.
+                      if (!repliedToMsg) return null;
+                      
+                      const isReplyToSelf = repliedToMsg.sender_id === user!.id;
+                      
+                      return (
+                        <div className={`p-2 rounded-lg mb-2 ${
+                          msg.sender_id === user!.id
+                            ? 'bg-[rgba(var(--color-surface),0.2)]' // Different color for self-reply
+                            : 'bg-[rgb(var(--color-surface-hover))]' // Different color for other-reply
+                        }`}>
+                          <div className={`font-bold text-xs mb-0.5 ${
+                            msg.sender_id === user!.id 
+                              ? 'text-[rgba(var(--color-text-on-primary),0.9)]' 
+                              : 'text-[rgb(var(--color-accent))]'
+                          }`}>
+                            {isReplyToSelf ? 'You' : selectedUser?.display_name}
+                          </div>
+                          {/* MODIFICATION: Show text or media placeholder */}
+                          <p className="text-xs opacity-90 truncate whitespace-pre-wrap break-words">
+                            {repliedToMsg.content ? repliedToMsg.content : (
+                              <span className="flex items-center gap-1 italic opacity-80">
+                                {repliedToMsg.media_type === 'image' && <Paperclip size={12} className="inline-block" />}
+                                {repliedToMsg.media_type === 'image' && 'Image'}
+                                {repliedToMsg.media_type === 'video' && <Paperclip size={12} className="inline-block" />}
+                                {repliedToMsg.media_type === 'video' && 'Video'}
+                                {repliedToMsg.media_type === 'document' && <FileText size={12} className="inline-block" />}
+                                {repliedToMsg.media_type === 'document' && 'File'}
+                                {/* Fallback if RLS hides content/media but not sender */}
+                                {!repliedToMsg.content && !repliedToMsg.media_type && '[Message]'}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      );
+                    })()}
+                    {/* --- MODIFICATION END --- */}
+
                     {msg.media_url && (
                       <div className="mt-2">
                         {msg.media_type === 'image' && (
@@ -420,11 +592,24 @@ export const Messages = () => {
                       }`}
                     >
                       {new Date(msg.created_at).toLocaleTimeString([], {
+                        day: 'numeric',
+                        month: 'short',
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
                     </span>
                   </div>
+
+                  {/* Show reply icon on the right for received messages */}
+                  {msg.sender_id !== user!.id && (
+                    <button
+                      onClick={() => setReplyingTo(msg)}
+                      className="p-1 rounded-full text-[rgb(var(--color-text-secondary))] opacity-0 group-hover:opacity-100 transition hover:bg-[rgb(var(--color-surface-hover))]"
+                      title="Reply"
+                    >
+                      <CornerUpLeft size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
 
@@ -434,7 +619,7 @@ export const Messages = () => {
                     <div className="flex gap-1 items-end">
                       <span className="w-2 h-2 bg-[rgb(var(--color-text-secondary))] rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></span>
                       <span className="w-2 h-2 bg-[rgb(var(--color-text-secondary))] rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></span>
-                      <span className="w-2 h-2 bg-[rgb(var(--color-text-secondary))] rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></span>
+                      <span className="w-2 h-2 bg-[rgb(var(--color-text-secondary))] rounded-full animate-pulse" style={{ animationDelay: '4ds00ms' }}></span>
                     </div>
                   </div>
                 </div>
@@ -443,9 +628,42 @@ export const Messages = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={sendMessage} className="p-3 bg-[rgb(var(--color-surface))] border-t border-[rgb(var(--color-border))]">
+            <div className="bg-[rgb(var(--color-surface))]">
+              {replyingTo && (
+                <div className="p-3 bg-[rgb(var(--color-surface-hover))] flex items-center justify-between mx-3 mt-3 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-[rgb(var(--color-text-secondary))] flex items-center gap-1">
+                      <CornerUpLeft size={14} />
+                      Replying to {replyingTo.sender_id === user!.id ? 'yourself' : selectedUser?.display_name}
+                    </div>
+                    {/* --- MODIFICATION: Show text or media placeholder --- */}
+                    <p className="text-sm text-[rgb(var(--color-text))] truncate mt-0.5">
+                      {replyingTo.content ? replyingTo.content : (
+                        <span className="flex items-center gap-1 italic opacity-80">
+                          {replyingTo.media_type === 'image' && <Paperclip size={12} className="inline-block" />}
+                          {replyingTo.media_type === 'image' && 'Image'}
+                          {replyingTo.media_type === 'video' && <Paperclip size={12} className="inline-block" />}
+                          {replyingTo.media_type === 'video' && 'Video'}
+                          {replyingTo.media_type === 'document' && <FileText size={12} className="inline-block" />}
+                          {replyingTo.media_type === 'document' && 'File'}
+                          {!replyingTo.content && !replyingTo.media_type && '[Message]'}
+                        </span>
+                      )}
+                    </p>
+                    {/* --- END MODIFICATION --- */}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(null)}
+                    className="p-1 hover:bg-[rgb(var(--color-surface))] rounded-full transition text-[rgb(var(--color-text))]"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
+              
               {(file || remoteUrl) && (
-                <div className="mb-3 p-3 bg-[rgb(var(--color-surface-hover))] rounded-lg flex items-center justify-between">
+                <div className="mb-3 p-3 bg-[rgb(var(--color-surface-hover))] rounded-lg flex items-center justify-between mx-3 mt-3">
                   <div className="flex-1 pr-2">
                     {getPreview()}
                   </div>
@@ -454,6 +672,7 @@ export const Messages = () => {
                     onClick={() => {
                       setFile(null);
                       setRemoteUrl('');
+                      setMediaInputMode(null);
                     }}
                     className="p-1 hover:bg-[rgb(var(--color-surface-hover))] rounded-full transition text-[rgb(var(--color-text))]"
                   >
@@ -461,7 +680,37 @@ export const Messages = () => {
                   </button>
                 </div>
               )}
+              
+              {mediaInputMode === 'url' && !file && !remoteUrl && (
+                  <div className="p-3">
+                      <div className="flex items-center gap-2">
+                          <input
+                              type="url"
+                              value={remoteUrl}
+                              onChange={(e) => {
+                                setRemoteUrl(e.target.value);
+                                setFile(null);
+                              }}
+                              placeholder="Paste media URL..."
+                              className="flex-1 px-3 py-2 text-sm border border-[rgb(var(--color-border))] rounded-full focus:outline-none focus:border-[rgb(var(--color-accent))] bg-[rgb(var(--color-background))] text-[rgb(var(--color-text))]"
+                          />
+                          <button
+                              type="button"
+                              onClick={() => {
+                                setRemoteUrl('');
+                                setMediaInputMode(null);
+                              }}
+                              className="p-1 rounded-full text-[rgb(var(--color-text-secondary))] hover:bg-[rgb(var(--color-surface-hover))] transition"
+                              title="Cancel URL input"
+                          >
+                              <X size={20} />
+                          </button>
+                      </div>
+                  </div>
+              )}
+            </div>
 
+            <form onSubmit={sendMessage} className="p-3 bg-[rgb(var(--color-surface))] border-t border-[rgb(var(--color-border))] relative">
               {isUploading && (
                 <div className="mb-3 w-full bg-[rgb(var(--color-border))] rounded-full h-2 overflow-hidden">
                   <div 
@@ -482,28 +731,48 @@ export const Messages = () => {
                 className="hidden"
               />
 
+              {/* Media Selection Pop-up */}
+              {showMediaMenu && (
+                  <div className="absolute bottom-full left-3 mb-2 w-48 bg-[rgb(var(--color-surface))] border border-[rgb(var(--color-border))] rounded-lg shadow-xl overflow-hidden z-30">
+                      <button
+                          type="button"
+                          className="w-full text-left p-3 text-[rgb(var(--color-text))] hover:bg-[rgb(var(--color-surface-hover))] transition flex items-center gap-2"
+                          onClick={() => {
+                              setShowMediaMenu(false);
+                              fileInputRef.current?.click();
+                              setRemoteUrl('');
+                              setMediaInputMode('file');
+                          }}
+                      >
+                          <Paperclip size={18} /> Upload file
+                      </button>
+                      <button
+                          type="button"
+                          className="w-full text-left p-3 text-[rgb(var(--color-text))] hover:bg-[rgb(var(--color-surface-hover))] transition flex items-center gap-2"
+                          onClick={() => {
+                              setShowMediaMenu(false);
+                              setFile(null);
+                              setRemoteUrl('');
+                              setMediaInputMode('url');
+                          }}
+                      >
+                          <Link size={18} /> Fetch from URL
+                      </button>
+                  </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMediaMenu(!showMediaMenu);
+                  }}
                   className="p-2 rounded-full text-[rgb(var(--color-text-secondary))] hover:bg-[rgb(var(--color-surface-hover))] transition"
-                  title="Attach file"
+                  title="Attach file or link"
                 >
                   <Paperclip size={24} />
                 </button>
-
-                <div className="flex-1 flex items-center gap-1">
-                  <input
-                    type="url"
-                    value={remoteUrl}
-                    onChange={(e) => {
-                      setRemoteUrl(e.target.value);
-                      setFile(null);
-                    }}
-                    placeholder="Paste media URL..."
-                    className="flex-1 px-3 py-2 text-sm border border-[rgb(var(--color-border))] rounded-full focus:outline-none focus:border-[rgb(var(--color-accent))] bg-[rgb(var(--color-background))] text-[rgb(var(--color-text))]"
-                  />
-                </div>
 
                 <input
                   type="text"
