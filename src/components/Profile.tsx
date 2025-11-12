@@ -15,11 +15,13 @@ type CropResult = {
 
 /**
  * Uses HTML Canvas to perform a center-crop on an image and returns the result as a Blob.
+ * The 'scale' parameter simulates zooming into the image's center point.
  * @param imageFile The File object (image) to crop.
  * @param type 'avatar' (1:1 aspect) or 'banner' (~2.5:1 aspect).
+ * @param scale The zoom factor (1.0 = no zoom).
  * @returns A Promise that resolves to the cropped Blob or null on failure.
  */
-const getCroppedImageBlob = (imageFile: File, type: 'avatar' | 'banner'): Promise<Blob | null> => {
+const getCroppedImageBlob = (imageFile: File, type: 'avatar' | 'banner', scale: number): Promise<Blob | null> => {
   return new Promise((resolve) => {
     const image = new Image();
     const reader = new FileReader();
@@ -42,7 +44,7 @@ const getCroppedImageBlob = (imageFile: File, type: 'avatar' | 'banner'): Promis
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
-        // Simple center-crop logic
+        // Determine the largest possible crop area within the source image
         const imageAspect = image.width / image.height;
         const cropAspect = canvas.width / canvas.height;
         let sx, sy, sWidth, sHeight;
@@ -61,8 +63,25 @@ const getCroppedImageBlob = (imageFile: File, type: 'avatar' | 'banner'): Promis
             sy = (image.height - sHeight) / 2;
         }
 
-        // Draw the cropped section of the source image onto the canvas
-        // ctx.drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
+        // Apply Zoom (Scale): The crop area in the source image is scaled down by the 'scale' factor.
+        // This makes the content within the crop area appear larger (zoomed in).
+        const inverseScale = 1 / scale;
+        
+        sWidth *= inverseScale;
+        sHeight *= inverseScale;
+        
+        // Re-center the crop area after scaling
+        sx = image.width / 2 - sWidth / 2;
+        sy = image.height / 2 - sHeight / 2;
+
+        // Ensure crop area is within image bounds (clamping)
+        // If the scaled crop area (sWidth/sHeight) exceeds the image bounds, clamp it.
+        // For simplicity with center crop, we trust the scale is reasonable, but we ensure it doesn't start before 0.
+        sx = Math.max(0, sx);
+        sy = Math.max(0, sy);
+        
+        // Final Draw: draw the calculated section (sx, sy, sWidth, sHeight) 
+        // onto the entire canvas (0, 0, targetWidth, targetHeight)
         ctx.drawImage(image, sx, sy, sWidth, sHeight, 0, 0, canvas.width, canvas.height);
 
         // Convert canvas to Blob
@@ -122,7 +141,11 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
   const [bannerPreviewUrl, setBannerPreviewUrl] = useState('');
   const [showAvatarCropModal, setShowAvatarCropModal] = useState(false);
   const [showBannerCropModal, setShowBannerCropModal] = useState(false);
-  const [isCropping, setIsCropping] = useState(false); // To show loading state
+  const [isCropping, setIsCropping] = useState(false); // Used for both cropping and direct upload status
+
+  // NEW STATES FOR SIMULATED ZOOM
+  const [avatarCropScale, setAvatarCropScale] = useState(1.0);
+  const [bannerCropScale, setBannerCropScale] = useState(1.0);
 
   const openLightbox = (url: string, type: 'image' | 'video') => {
     setLightboxMediaUrl(url);
@@ -149,12 +172,38 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
     return diff < 300000; // 5 minutes
   };
 
-  // NEW HANDLERS FOR FILE SELECTION (TO OPEN MODAL)
+  /**
+   * Helper function to handle direct upload of files (like GIFs) that don't need cropping.
+   */
+  const handleDirectUpload = async (file: File, type: 'avatar' | 'banner') => {
+    setIsCropping(true); 
+    try {
+        const result = await uploadMedia(file, 'profiles');
+        if (result) {
+            if (type === 'avatar') {
+                setAvatarUrl(result.url);
+            } else {
+                setBannerUrl(result.url);
+            }
+        }
+    } catch(e) {
+        console.error("Direct upload failed:", e);
+    } finally {
+        setIsCropping(false);
+    }
+  };
+
+  // UPDATED HANDLERS FOR FILE SELECTION (TO CHECK FOR GIF)
   const handleAvatarFileSelect = (file: File | null) => {
     if (file) {
+      if (file.type === 'image/gif') {
+        handleDirectUpload(file, 'avatar');
+        return;
+      }
       const url = URL.createObjectURL(file);
       setAvatarFileToCrop(file);
-      setAvatarPreviewUrl(url); // Set the local URL for preview in the modal
+      setAvatarPreviewUrl(url); 
+      setAvatarCropScale(1.0); // Reset scale on new file select
       setShowAvatarCropModal(true);
     } else {
       setAvatarFileToCrop(null);
@@ -164,9 +213,14 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
 
   const handleBannerFileSelect = (file: File | null) => {
     if (file) {
+      if (file.type === 'image/gif') {
+        handleDirectUpload(file, 'banner');
+        return;
+      }
       const url = URL.createObjectURL(file);
       setBannerFileToCrop(file);
-      setBannerPreviewUrl(url); // Set the local URL for preview in the modal
+      setBannerPreviewUrl(url); 
+      setBannerCropScale(1.0); // Reset scale on new file select
       setShowBannerCropModal(true);
     } else {
       setBannerFileToCrop(null);
@@ -179,10 +233,11 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
     if (!file) return;
 
     setIsCropping(true);
+    const scale = type === 'avatar' ? avatarCropScale : bannerCropScale;
 
     try {
         // 1. Perform client-side cropping using Canvas API
-        const croppedBlob = await getCroppedImageBlob(file, type);
+        const croppedBlob = await getCroppedImageBlob(file, type, scale);
 
         if (!croppedBlob) {
             console.error("Cropping failed, received null Blob.");
@@ -719,7 +774,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
 ))}
       </div>
 
-      {/* AVATAR CROP MODAL (with actual cropping logic) */}
+      {/* AVATAR CROP MODAL (with actual cropping logic and zoom simulation) */}
       {showAvatarCropModal && avatarFileToCrop && (
         <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => !isCropping && setShowAvatarCropModal(false)}>
           <div className="bg-[rgb(var(--color-surface))] rounded-2xl w-full max-w-lg flex flex-col p-6 text-[rgb(var(--color-text))]" onClick={(e) => e.stopPropagation()}>
@@ -734,11 +789,12 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
                 </button>
             </div>
             <div className="flex justify-center items-center h-80 w-full bg-[rgb(var(--color-background))] rounded-lg overflow-hidden relative mb-4">
-                {/* Image preview will show the entire image */}
+                {/* Image preview showing the effect of the scale on the image */}
                 <img 
                   src={avatarPreviewUrl} 
                   className="max-w-full max-h-full object-contain" 
                   alt="Avatar Crop Preview" 
+                  style={{ transform: `scale(${avatarCropScale})` }} // Visual Zoom Simulation
                 />
                 {/* Visual guide for the 1:1 square crop area */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -756,12 +812,25 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
                     )}
                 </div>
             </div>
-            <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-4">
-                The image will be center-cropped to a 1:1 (square) ratio for your avatar.
-            </p>
+
+            <div className="mt-4">
+                <label className="block text-sm font-medium mb-1 text-[rgb(var(--color-text))]">Zoom Level ({avatarCropScale.toFixed(1)}x)</label>
+                <input 
+                    type="range" 
+                    min="1.0" 
+                    max="3.0" 
+                    step="0.1" 
+                    value={avatarCropScale} 
+                    onChange={(e) => setAvatarCropScale(parseFloat(e.target.value))} 
+                    className="w-full h-2 bg-[rgb(var(--color-border))] rounded-lg appearance-none cursor-pointer range-lg"
+                    disabled={isCropping}
+                />
+                <p className="text-xs text-[rgb(var(--color-text-secondary))] mt-1">Adjusting zoom scales the image content for the **center crop** area.</p>
+            </div>
+            
             <button
               onClick={() => handleCropAndSave(avatarFileToCrop, 'avatar')}
-              className="w-full py-3 bg-[rgba(var(--color-accent),1)] text-[rgb(var(--color-text-on-primary))] rounded-full font-semibold hover:bg-[rgba(var(--color-primary),1)] transition disabled:opacity-50"
+              className="w-full py-3 bg-[rgba(var(--color-accent),1)] text-[rgb(var(--color-text-on-primary))] rounded-full font-semibold hover:bg-[rgba(var(--color-primary),1)] transition disabled:opacity-50 mt-4"
               disabled={isCropping}
             >
               {isCropping ? 'Cropping & Uploading...' : 'Crop & Save Avatar'}
@@ -770,7 +839,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
         </div>
       )}
 
-      {/* BANNER CROP MODAL (with actual cropping logic) */}
+      {/* BANNER CROP MODAL (with actual cropping logic and zoom simulation) */}
       {showBannerCropModal && bannerFileToCrop && (
         <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => !isCropping && setShowBannerCropModal(false)}>
           <div className="bg-[rgb(var(--color-surface))] rounded-2xl w-full max-w-2xl flex flex-col p-6 text-[rgb(var(--color-text))]" onClick={(e) => e.stopPropagation()}>
@@ -785,11 +854,12 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
                 </button>
             </div>
             <div className="flex justify-center items-center h-48 w-full bg-[rgb(var(--color-background))] rounded-lg overflow-hidden relative mb-4">
-                {/* Image preview will show the entire image */}
+                {/* Image preview showing the effect of the scale on the image */}
                 <img 
                   src={bannerPreviewUrl} 
                   className="w-full h-full object-cover" 
                   alt="Banner Crop Preview" 
+                  style={{ transform: `scale(${bannerCropScale})` }} // Visual Zoom Simulation
                 />
                 {/* Visual guide for the approx 2.5:1 banner crop area */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -808,12 +878,25 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
                     )}
                 </div>
             </div>
-            <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-4">
-                The image will be center-cropped to a widescreen (approx. 2.5:1) ratio for your banner.
-            </p>
+            
+            <div className="mt-4">
+                <label className="block text-sm font-medium mb-1 text-[rgb(var(--color-text))]">Zoom Level ({bannerCropScale.toFixed(1)}x)</label>
+                <input 
+                    type="range" 
+                    min="1.0" 
+                    max="3.0" 
+                    step="0.1" 
+                    value={bannerCropScale} 
+                    onChange={(e) => setBannerCropScale(parseFloat(e.target.value))} 
+                    className="w-full h-2 bg-[rgb(var(--color-border))] rounded-lg appearance-none cursor-pointer range-lg"
+                    disabled={isCropping}
+                />
+                <p className="text-xs text-[rgb(var(--color-text-secondary))] mt-1">Adjusting zoom scales the image content for the **center crop** area.</p>
+            </div>
+
             <button
               onClick={() => handleCropAndSave(bannerFileToCrop, 'banner')}
-              className="w-full py-3 bg-[rgba(var(--color-accent),1)] text-[rgb(var(--color-text-on-primary))] rounded-full font-semibold hover:bg-[rgba(var(--color-primary),1)] transition disabled:opacity-50"
+              className="w-full py-3 bg-[rgba(var(--color-accent),1)] text-[rgb(var(--color-text-on-primary))] rounded-full font-semibold hover:bg-[rgba(var(--color-primary),1)] transition disabled:opacity-50 mt-4"
               disabled={isCropping}
             >
               {isCropping ? 'Cropping & Uploading...' : 'Crop & Save Banner'}
