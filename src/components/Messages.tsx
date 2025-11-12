@@ -2,13 +2,23 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase, Message, Profile, uploadMedia } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link } from 'lucide-react';
+import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link, CornerUpLeft } from 'lucide-react';
+
+// Define a type that includes the possible joined reply data
+type AppMessage = Message & {
+  reply_to?: {
+    id: string;
+    content: string;
+    sender_id: string;
+  } | null;
+};
 
 export const Messages = () => {
   const [conversations, setConversations] = useState<Profile[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<AppMessage[]>([]);
   const [content, setContent] = useState('');
+  const [replyingTo, setReplyingTo] = useState<AppMessage | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [remoteUrl, setRemoteUrl] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -145,7 +155,7 @@ export const Messages = () => {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
-          const msg = payload.new as Message;
+          const msg = payload.new as AppMessage;
           if (
             (msg.sender_id === user!.id && msg.recipient_id === selectedUser.id) ||
             (msg.sender_id === selectedUser.id && msg.recipient_id === user!.id)
@@ -256,6 +266,7 @@ export const Messages = () => {
         content,
         media_url,
         media_type,
+        reply_to_id: replyingTo ? replyingTo.id : null,
       })
       .select()
       .single();
@@ -264,6 +275,7 @@ export const Messages = () => {
       setContent('');
       setFile(null);
       setRemoteUrl('');
+      setReplyingTo(null);
       setIsUploading(false);
       setUploadProgress(0);
       setMediaInputMode(null);
@@ -273,12 +285,12 @@ export const Messages = () => {
   const loadMessages = async (recipientId: string) => {
     const { data } = await supabase
       .from('messages')
-      .select('*')
+      .select('*, reply_to:messages!reply_to_id(id, content, sender_id)')
       .or(
         `and(sender_id.eq.${user!.id},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${user!.id})`
       )
       .order('created_at', { ascending: true });
-    setMessages(data || []);
+    setMessages(data as AppMessage[] || []);
     setTimeout(scrollToBottom, 100);
   };
 
@@ -409,8 +421,19 @@ export const Messages = () => {
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex ${msg.sender_id === user!.id ? 'justify-end' : 'justify-start'}`}
+                  className={`flex items-center gap-2 group ${msg.sender_id === user!.id ? 'justify-end' : 'justify-start'}`}
                 >
+                  {/* Show reply icon on the left for received messages */}
+                  {msg.sender_id !== user!.id && (
+                    <button
+                      onClick={() => setReplyingTo(msg)}
+                      className="p-1 rounded-full text-[rgb(var(--color-text-secondary))] opacity-0 group-hover:opacity-100 transition hover:bg-[rgb(var(--color-surface-hover))]"
+                      title="Reply"
+                    >
+                      <CornerUpLeft size={16} />
+                    </button>
+                  )}
+
                   <div
                     className={`max-w-[90%] sm:max-w-[60%] md:max-w-[65%] px-3 py-2 rounded-xl shadow-md ${
                       msg.sender_id === user!.id
@@ -418,6 +441,34 @@ export const Messages = () => {
                         : 'bg-[rgb(var(--color-surface))] text-[rgb(var(--color-text))] border border-[rgb(var(--color-border))] rounded-tl-none'
                     }`}
                   >
+                    {(() => {
+                      // Find the replied-to message. Use joined data first, fallback to in-memory search.
+                      const repliedToMsg = msg.reply_to ? msg.reply_to : (msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null);
+                      
+                      if (!repliedToMsg) return null;
+                      
+                      const isReplyToSelf = repliedToMsg.sender_id === user!.id;
+                      
+                      return (
+                        <div className={`p-2 rounded-lg mb-2 ${
+                          msg.sender_id === user!.id
+                            ? 'bg-[rgba(var(--color-surface),0.2)]' // Different color for self-reply
+                            : 'bg-[rgb(var(--color-surface-hover))]' // Different color for other-reply
+                        }`}>
+                          <div className={`font-bold text-xs mb-0.5 ${
+                            msg.sender_id === user!.id 
+                              ? 'text-[rgba(var(--color-text-on-primary),0.9)]' 
+                              : 'text-[rgb(var(--color-accent))]'
+                          }`}>
+                            {isReplyToSelf ? 'You' : selectedUser?.display_name}
+                          </div>
+                          <p className="text-xs opacity-90 truncate whitespace-pre-wrap break-words">
+                            {repliedToMsg.content}
+                          </p>
+                        </div>
+                      );
+                    })()}
+
                     {msg.media_url && (
                       <div className="mt-2">
                         {msg.media_type === 'image' && (
@@ -452,6 +503,17 @@ export const Messages = () => {
                       })}
                     </span>
                   </div>
+
+                  {/* Show reply icon on the right for sent messages */}
+                  {msg.sender_id === user!.id && (
+                    <button
+                      onClick={() => setReplyingTo(msg)}
+                      className="p-1 rounded-full text-[rgb(var(--color-text-secondary))] opacity-0 group-hover:opacity-100 transition hover:bg-[rgb(var(--color-surface-hover))]"
+                      title="Reply"
+                    >
+                      <CornerUpLeft size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
 
@@ -471,6 +533,27 @@ export const Messages = () => {
             </div>
 
             <div className="bg-[rgb(var(--color-surface))]">
+              {replyingTo && (
+                <div className="p-3 bg-[rgb(var(--color-surface-hover))] flex items-center justify-between mx-3 mt-3 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-[rgb(var(--color-text-secondary))] flex items-center gap-1">
+                      <CornerUpLeft size={14} />
+                      Replying to {replyingTo.sender_id === user!.id ? 'yourself' : selectedUser?.display_name}
+                    </div>
+                    <p className="text-sm text-[rgb(var(--color-text))] truncate mt-0.5">
+                      {replyingTo.content}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(null)}
+                    className="p-1 hover:bg-[rgb(var(--color-surface))] rounded-full transition text-[rgb(var(--color-text))]"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
+              
               {(file || remoteUrl) && (
                 <div className="mb-3 p-3 bg-[rgb(var(--color-surface-hover))] rounded-lg flex items-center justify-between mx-3 mt-3">
                   <div className="flex-1 pr-2">
