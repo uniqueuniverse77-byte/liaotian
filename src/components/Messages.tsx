@@ -25,6 +25,16 @@ export const Messages = () => {
 
   const { user } = useAuth();
 
+  // --- ONLINE STATUS CHECKER ---
+  const isUserOnline = (lastSeen: string | null | undefined): boolean => {
+    if (!lastSeen) return false;
+    const lastSeenDate = new Date(lastSeen);
+    const now = new Date();
+    // Consider online if last_seen is within the last 5 minutes (300,000 ms)
+    return (now.getTime() - lastSeenDate.getTime()) < 300000;
+  };
+  // -----------------------------
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -49,8 +59,8 @@ export const Messages = () => {
         sender_id,
         recipient_id,
         created_at,
-        sender:profiles!sender_id(id, username, display_name, avatar_url, verified),
-        recipient:profiles!recipient_id(id, username, display_name, avatar_url, verified)
+        sender:profiles!sender_id(id, username, display_name, avatar_url, verified, last_seen),
+        recipient:profiles!recipient_id(id, username, display_name, avatar_url, verified, last_seen)
       `)
       .or(`sender_id.eq.${user!.id},recipient_id.eq.${user!.id}`)
       .order('created_at', { ascending: false });
@@ -344,9 +354,11 @@ export const Messages = () => {
                   className="w-14 h-14 rounded-full object-cover"
                   alt=""
                 />
-                <div
-                  className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full ring-2 ring-[rgb(var(--color-surface))]"
-                />
+                {isUserOnline(u.last_seen) && (
+                  <div
+                    className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full ring-2 ring-[rgb(var(--color-surface))]"
+                  />
+                )}
               </div>
               <div className="text-left flex-1 min-w-0">
                 <div className="font-semibold flex items-center gap-1 truncate text-[rgb(var(--color-text))]">
@@ -374,9 +386,11 @@ export const Messages = () => {
                     className="w-10 h-10 rounded-full object-cover"
                     alt=""
                   />
-                  <div
-                    className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-[rgb(var(--color-surface))]"
-                  />
+                  {isUserOnline(selectedUser.last_seen) && (
+                    <div
+                      className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-[rgb(var(--color-surface))]"
+                    />
+                  )}
                 </div>
                 <div className="text-left min-w-0">
                   <div className="font-bold flex items-center gap-1 truncate text-[rgb(var(--color-text))]">
