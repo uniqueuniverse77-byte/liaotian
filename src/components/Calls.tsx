@@ -267,11 +267,7 @@ export const Calls = () => {
     return (
       <Modal onClose={denyCall}>
         <div className="text-center text-[rgb(var(--color-text))]">
-          <img
-             src={incomingCall.from.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${incomingCall.from.username}`}
-             className="w-24 h-24 rounded-full object-cover mx-auto mb-4"
-             alt=""
-          />
+          
           <h3 className="text-xl font-bold">{incomingCall.from.display_name}</h3>
           <p className="text-[rgb(var(--color-text-secondary))]">
             Incoming {incomingCall.type} call...
@@ -322,11 +318,7 @@ export const Calls = () => {
                     {/* Avatar Fallback for Remote */}
                     {!remoteStream && (
                         <div className="absolute inset-0 flex items-center justify-center">
-                            <img
-                                src={callInProgress.with.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${callInProgress.with.username}`}
-                                className="w-24 h-24 rounded-full object-cover opacity-50"
-                                alt=""
-                            />
+                            
                         </div>
                     )}
                     
