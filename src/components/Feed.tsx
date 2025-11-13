@@ -30,6 +30,10 @@ interface Liker {
   };
 }
 
+// --- PAGINATION START ---
+const POST_PAGE_SIZE = 10;
+// --- PAGINATION END ---
+
 export const Feed = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [content, setContent] = useState('');
@@ -56,6 +60,12 @@ export const Feed = () => {
   const [commentsList, setCommentsList] = useState<Comment[]>([]);
   const [newCommentText, setNewCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+  
+  // --- PAGINATION STATE START ---
+  const [postPage, setPostPage] = useState(0);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
+  // --- PAGINATION STATE END ---
 
   const openLightbox = (url: string, type: 'image' | 'video') => {
     setLightboxMediaUrl(url);
@@ -86,12 +96,19 @@ export const Feed = () => {
       .in('entity_id', postIds);
     
     if (data) {
-      setLikedPostIds(new Set(data.map(d => d.entity_id)));
+      // --- MODIFICATION: Add to existing set, don't replace
+      setLikedPostIds(prevSet => new Set([...prevSet, ...data.map(d => d.entity_id)]));
     }
   };
 
+  // --- MODIFICATION: Load only first page
   const loadPosts = async () => {
+    setPosts([]);
+    setPostPage(0);
+    setHasMorePosts(true);
+
     let query = supabase.from('posts').select('*, profiles(*)').order('created_at', { ascending: false });
+    
     if (FOLLOW_ONLY_FEED && user) {
       const { data: following } = await supabase
         .from('follows')
@@ -103,10 +120,54 @@ export const Feed = () => {
 
       query = query.in('user_id', allowedIds);
     }
-    const { data } = await query;
+    
+    const { data } = await query.range(0, POST_PAGE_SIZE - 1);
+    
     const loadedPosts = data || [];
     setPosts(loadedPosts);
+    
+    if (loadedPosts.length < POST_PAGE_SIZE) {
+      setHasMorePosts(false);
+    }
+    
     fetchUserLikes(loadedPosts);
+  };
+  
+  // --- NEW: Load more posts for infinite scroll
+  const loadMorePosts = async () => {
+    if (isLoadingMorePosts || !hasMorePosts) return;
+    
+    setIsLoadingMorePosts(true);
+    const nextPage = postPage + 1;
+    const from = nextPage * POST_PAGE_SIZE;
+    const to = from + POST_PAGE_SIZE - 1;
+
+    let query = supabase.from('posts').select('*, profiles(*)').order('created_at', { ascending: false });
+    
+    if (FOLLOW_ONLY_FEED && user) {
+      const { data: following } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', user.id);
+
+      const followingIds = following?.map(f => f.following_id) || [];
+      const allowedIds = [...followingIds, user.id];
+
+      query = query.in('user_id', allowedIds);
+    }
+    
+    const { data } = await query.range(from, to);
+    
+    const newPosts = data || [];
+    setPosts(current => [...current, ...newPosts]);
+    setPostPage(nextPage);
+    
+    if (newPosts.length < POST_PAGE_SIZE) {
+      setHasMorePosts(false);
+    }
+    
+    fetchUserLikes(newPosts);
+    setIsLoadingMorePosts(false);
   };
 
   // Handle Likes
@@ -209,16 +270,26 @@ export const Feed = () => {
     }).subscribe();
 
     const handleScroll = () => {
+      // Handle composer shrink
       const scrolled = window.scrollY > 100;
       if (scrolled && isExpanded) setIsExpanded(false);
       setHasScrolled(scrolled);
+      
+      // --- PAGINATION: Handle infinite scroll
+      if (
+        window.innerHeight + document.documentElement.scrollTop + 200 >= document.documentElement.offsetHeight &&
+        hasMorePosts &&
+        !isLoadingMorePosts
+      ) {
+        loadMorePosts();
+      }
     };
     window.addEventListener('scroll', handleScroll);
     return () => {
       supabase.removeChannel(channel);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [user, isExpanded]);
+  }, [user, isExpanded, hasMorePosts, isLoadingMorePosts]); // <-- Added dependencies
 
   const createPost = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -408,7 +479,7 @@ export const Feed = () => {
       </div>
 
       <div>
-        {posts.length === 0 && (
+        {posts.length === 0 && !isLoadingMorePosts && ( // <-- Modified condition
           <div className="text-center py-12 text-[rgb(var(--color-text-secondary))]" >
             {FOLLOW_ONLY_FEED ? 'No posts from people you follow yet.' : 'No posts yet. Be the first!'}
           </div>
@@ -509,6 +580,20 @@ export const Feed = () => {
             </div>
           </div>
         ))}
+        
+        {/* --- PAGINATION INDICATORS START --- */}
+        {isLoadingMorePosts && (
+          <div className="flex justify-center p-4">
+            <div className="w-6 h-6 border-2 border-[rgb(var(--color-accent))] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        )}
+        
+        {!isLoadingMorePosts && !hasMorePosts && posts.length > 0 && (
+          <div className="text-center py-8 text-sm text-[rgb(var(--color-text-secondary))]">
+            You've reached the end of the feed.
+          </div>
+        )}
+        {/* --- PAGINATION INDICATORS END --- */}
       </div>
 
       {/* Lightbox */}
