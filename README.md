@@ -62,7 +62,6 @@ If you just want to create an account on **LiaoTian** (our official deployment) 
 - [ ] clicking on chat button couldn't utilize the url param for user to directly open conversation with someone
 - [ ] message replies don't show text content for some reason
 - [ ] audio and video calling may require a turn server
-- [ ] likes and comments count not showing up directly on Feed and Profile
 
 ---
 
