@@ -43,7 +43,7 @@ export type Message = {
 };
 
 // === STORAGE HELPERS ===
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
 export const uploadMedia = async (
   file: File,
