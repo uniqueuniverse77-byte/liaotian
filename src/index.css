@@ -110,3 +110,51 @@
   --color-text-secondary: 170, 150, 190; /* Soft Purple-Gray Secondary Text */
   --color-surface-hover: 35, 20, 50;      /* Slightly lighter hover state */
 }
+
+/* Mahir Beats Theme: Dark blue hues, nothing purely black */
+.theme-mahir-beats {
+  /* Primary/Accent colors - Deep Blue Analogous */
+  --color-primary: 0, 100, 148;    /* Dark Cerulean Blue */
+  --color-accent: 0, 128, 192;    /* Slightly lighter Blue */
+ 
+  /* Text/Background colors */
+  --color-background: 10, 20, 30;  /* Very Dark Blue-Gray (Not pure black) */
+  --color-text: 220, 230, 240;      /* Off-White/Light Gray-Blue */
+  --color-text-on-primary: 255, 255, 255; /* White for text over primary color */
+  --color-surface: 18, 30, 45;      /* Card backgrounds - slightly lighter dark blue */
+  --color-border: 40, 60, 80;      /* Dark Blue Border */
+  --color-text-secondary: 140, 160, 180; /* Blue-Gray Secondary Text */
+  --color-surface-hover: 30, 50, 70;      /* Subtle darker hover state */
+}
+
+/* Dewan Mukto Theme: Light theme with low contrast black and whites */
+.theme-dewan-mukto {
+  /* Primary/Accent colors - Soft Teal/Mint */
+  --color-primary: 130, 210, 180;    /* Soft Mint Green/Teal */
+  --color-accent: 180, 230, 210;    /* Very light Mint/Aqua */
+
+  /* Text/Background colors - Low Contrast */
+  --color-background: 250, 250, 250; /* Very light Off-White */
+  --color-text: 70, 70, 70;        /* Dark Gray (Not pure black) */
+  --color-text-on-primary: 0, 0, 0;  /* Black for text over primary color */
+  --color-surface: 240, 240, 240;    /* Card backgrounds - light gray */
+  --color-border: 200, 200, 200;    /* Light Gray Border */
+  --color-text-secondary: 130, 130, 130; /* Medium Gray Secondary Text */
+  --color-surface-hover: 230, 230, 230;    /* Subtle darker hover state */
+}
+
+/* Marlizo Theme: Pure black background with neon red highlights */
+.theme-marlizo {
+  /* Primary/Accent colors - Neon Red */
+  --color-primary: 255, 0, 0;      /* Pure Neon Red */
+  --color-accent: 255, 50, 50;    /* Slightly softer Red */
+ 
+  /* Text/Background colors */
+  --color-background: 0, 0, 0;      /* Pure Black */
+  --color-text: 255, 255, 255;      /* Pure White */
+  --color-text-on-primary: 0, 0, 0;  /* Black for text over primary color */
+  --color-surface: 10, 0, 0;        /* Card backgrounds - very dark, slight red tint */
+  --color-border: 50, 0, 0;        /* Dark Red Border */
+  --color-text-secondary: 150, 150, 150; /* Gray Secondary Text */
+  --color-surface-hover: 20, 0, 0;      /* Slightly darker surface hover */
+}
