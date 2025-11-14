@@ -17,7 +17,7 @@ const presets: ThemePreset[] = [
   { value: 'knightspeak', name: 'Knightspeak', desc: 'Special theme for Knightspeak fans and enthusiasts. Medieval vibes.' },
   { value: 'wildest-dimensions', name: 'Wildest Dimensions', desc: 'Special theme for Radiyana, in the Wildest Dimensions. Feel the high life.'},
   { value: 'mahir-beats', name: 'Mahir Beats', desc: 'Special theme for Mahir. Deep dark blues. Enjoy the cruise.'},
-  { value: 'dewan-mukto', name: 'Dewan Mukto', desc: 'Low contrast within pure black and white, reflecting the developer's identity.'},
+  { value: 'dewan-mukto', name: 'Dewan Mukto', desc: 'Low contrast within pure black and white. Timeless.'},
   { value: 'marlizo', name: 'Marlizo', desc: 'Special theme for Marlizo. Dante from Devil May Cry will love this.'}
 ];
 
