@@ -338,7 +338,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
   /**
    * Social Functions (Copied/Adapted from Feed.tsx)
    */
-  const fetchUserLikes = useCallback(async (currentPosts: Post[]) => {
+  const fetchUserLikes = async (currentPosts: Post[]) => {
     if (!user || currentPosts.length === 0) return;
     const postIds = currentPosts.map(p => p.id);
     const { data } = await supabase
@@ -355,7 +355,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
         return newSet;
       });
     }
-  }, [user]); // Added user dependency
+  }; // Added user dependency
 
   const handleToggleLike = async (post: Post) => {
     if (!user) return;
@@ -465,7 +465,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
     }
   };
 
-  const loadPosts = useCallback(async () => {
+  const loadPosts = async () => {
     if (!targetUserId) return;
     const { data } = await supabase
       .from('posts')
@@ -478,7 +478,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
   }, [targetUserId, fetchUserLikes]);
   
   // --- NEW: Load Liked Posts ---
-  const loadLikedPosts = useCallback(async () => {
+  const loadLikedPosts = async () => {
     if (!targetUserId) return;
     
     setIsLoadingLikes(true);
@@ -513,9 +513,9 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
     
     setIsLikesLoaded(true);
     setIsLoadingLikes(false);
-  }, [targetUserId, fetchUserLikes]);
+  };
 
-  const loadFollowStats = useCallback(async () => {
+  const loadFollowStats = async () => {
     if (!targetUserId) return;
     const { count: followers } = await supabase
       .from('follows')
@@ -529,9 +529,9 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
 
     setFollowerCount(followers || 0);
     setFollowingCount(followingC || 0);
-  }, [targetUserId]);
+  };
 
-  const checkFollowing = useCallback(async () => {
+  const checkFollowing = async () => {
     if (!user || !targetUserId) return;
     const { data } = await supabase
       .from('follows')
@@ -540,7 +540,7 @@ export const Profile = ({ userId, onMessage, onSettings }: { userId?: string; on
       .eq('following_id', targetUserId)
       .maybeSingle();
     setIsFollowing(!!data);
-  }, [user, targetUserId]);
+  };
 
   useEffect(() => {
     if (targetUserId) {
