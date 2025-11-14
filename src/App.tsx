@@ -147,9 +147,11 @@ const Main = () => {
         <div className="min-h-screen bg-[rgb(var(--color-background))]">
           <div className="bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] sticky top-0 z-50 shadow-sm">
             <div className="max-w-6xl mx-auto flex items-center justify-between px-4 h-14">
-              <h1 className="text-2xl font-black bg-gradient-to-r from-[rgba(var(--color-primary),1)] via-[rgba(var(--color-accent),1)] to-[rgba(var(--color-primary),1)] bg-clip-text text-transparent">
-                聊天
-              </h1>
+              <img 
+                src="https://mux8.com/assets/logo/liaotian-dragon.svg" 
+                alt="LiaoTian logo"
+                className="h-10"
+              />
               <a href="/" className="text-[rgb(var(--color-primary))] hover:text-[rgba(var(--color-primary),0.8)] font-bold">
                 ← Back to Home
               </a>
@@ -177,9 +179,11 @@ const Main = () => {
     <div className="min-h-screen bg-[rgb(var(--color-background))]">
       <nav className="bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 h-14">
-          <h1 className="text-2xl font-black bg-gradient-to-r from-[rgba(var(--color-primary),1)] via-[rgba(var(--color-accent),1)] to-[rgba(var(--color-primary),1)] bg-clip-text text-transparent">
-            聊天
-          </h1>
+         <img 
+            src="https://mux8.com/assets/logo/liaotian-dragon.svg" 
+            alt="LiaoTian logo"
+            className="h-10" // Adjusted for the header height
+          />
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowSearch(true)}
