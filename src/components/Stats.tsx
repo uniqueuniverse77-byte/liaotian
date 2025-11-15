@@ -16,7 +16,7 @@ const PLATFORM_LAUNCH_DATE = '2025-11-07T12:51:03.751Z';
 const TABLE_COUNT_STATS = [
   { key: 'profiles', icon: Users, description: 'Total User Accounts', type: 'count' as const, table: 'profiles' },
   { key: 'posts', icon: FileText, description: 'Total Content Posts', type: 'count' as const, table: 'posts' },
-  { key: 'messages', icon: MessageSquare, description: 'Total Messages', type: 'count' as const, table: 'messages' },
+  { key: 'messages', icon: MessageSquare, description: '(Your) Total Messages', type: 'count' as const, table: 'messages' },
   { key: 'likes', icon: Heart, description: 'Total Likes/Reactions', type: 'count' as const, table: 'likes' },
   { key: 'comments', icon: MessageSquare, description: 'Total Comments', type: 'count' as const, table: 'comments' },
 ];
@@ -101,14 +101,14 @@ const calculateTimeSinceLaunch = (launchDate: string): string => {
     // Approximation for Years (365.25 days)
     const years = Math.floor(remainingMs / (msInDay * 365.25));
     if (years > 0) {
-        parts.push(`${years} years`);
+        parts.push(`${years} year(s)`);
         remainingMs %= (msInDay * 365.25);
     }
 
     // Approximation for Months (30.44 days)
     const months = Math.floor(remainingMs / (msInDay * 30.44));
     if (months > 0) {
-        parts.push(`${months} months`);
+        parts.push(`${months} month(s)`);
         remainingMs %= (msInDay * 30.44);
     }
 
@@ -120,12 +120,12 @@ const calculateTimeSinceLaunch = (launchDate: string): string => {
 
     if (years > 0 || months > 0) {
         // Maximum format: YY years MM months DD days HH hours
-        if (days > 0) parts.push(`${days} days`);
-        if (hours > 0) parts.push(`${hours} hours`);
+        if (days > 0) parts.push(`${days} day(s)`);
+        if (hours > 0) parts.push(`${hours} hour(s)`);
         return parts.join(' ');
     } else {
         // Minimum format: DD days and HH hours
-        return `${days} days and ${hours} hours`;
+        return `${days} day(s) and ${hours} hour(s)`;
     }
 };
 
@@ -225,7 +225,7 @@ const fetchActivityStats = async (): Promise<Statistic[]> => {
 // Finds the profile with the most followers by querying the 'follows' table and manually aggregating
 const fetchHighestFollower = async (): Promise<Statistic> => {
     const key = 'highest_followers';
-    const label = 'Highest Followers Profile';
+    const label = 'Highest Followers';
     const icon = TrendingUp;
 
     try {
@@ -667,7 +667,7 @@ export const Stats: React.FC = () => {
         <>
           {/* Top Community & Recent Activity Section - Replaces Usage Stats */}
           <h3 className="text-2xl font-semibold text-[rgb(var(--color-text))] mb-4 flex items-center">
-            <TrendingUp className="h-5 w-5 mr-2 text-[rgb(var(--color-accent))]" /> Top Community & Recent Activity
+            <TrendingUp className="h-5 w-5 mr-2 text-[rgb(var(--color-accent))]" /> Community & Recent Activity
           </h3>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
             {/* Column 1: Highest Follower Profile & Time Since Launch */}
