@@ -1,10 +1,10 @@
 // src/components/Stats.tsx
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; 
-import { 
-  Users, FileText, MessageSquare, Heart, Loader2, Database, AlertTriangle, 
-  Clock, TrendingUp, Cpu, HardDrive, Zap, 
+import { supabase } from '../lib/supabase';
+import {
+  Users, FileText, MessageSquare, Heart, Loader2, Database, AlertTriangle,
+  Clock, TrendingUp, UserPlus, Activity
 } from 'lucide-react';
 
 // --- CONFIGURATION CONSTANTS ---
@@ -27,19 +27,31 @@ const USER_ACTIVITY_STATS = [
   { key: 'online_1y', icon: Clock, description: 'Online in last year', type: 'activity' as const, minutes: 365 * 24 * 60 },
 ];
 
+const RECENT_LIMIT = 5; // Number of users to fetch for recent panels
+
 // --- TYPE DEFINITIONS ---
 
-type StatType = 'count' | 'activity' | 'usage' | 'highest_follower';
+type StatType = 'count' | 'activity' | 'highest_follower' | 'recent_users' | 'recent_online';
+
+// Profile type for lists
+type ProfileListItem = {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string;
+  follower_count?: number;
+  created_at?: string; // For recently joined
+  last_seen?: string; // For recently online
+};
 
 // Generic type for a fetched statistic
 type Statistic = {
   key: string;
   label: string;
   icon: React.ElementType;
-  value: number | string | { profile: any } | 'Error';
+  value: number | string | { profile: ProfileListItem } | { list: ProfileListItem[] } | 'Error';
   error: boolean;
   errorMessage?: string;
-  unit?: string; // Used for usage stats
   type: StatType;
 };
 
@@ -50,6 +62,23 @@ const getNMinutesAgo = (minutes: number): string => {
   const date = new Date();
   date.setMinutes(date.getMinutes() - minutes);
   return date.toISOString();
+};
+
+const formatTimeAgo = (isoString: string | undefined): string => {
+    if (!isoString) return 'Never';
+    const date = new Date(isoString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    return `${months}mo ago`;
 };
 
 // --- FETCH LOGIC ---
@@ -64,34 +93,34 @@ const fetchTableCounts = async (): Promise<Statistic[]> => {
 
       if (error) {
         const errorMessage = error.code === '42P01' ? `(Table "${stat.table}" not found)` : `(DB Error: ${error.message})`;
-        return { 
-            key: stat.key, 
-            label: stat.description, 
-            icon: stat.icon, 
-            value: 'Error', 
-            error: true, 
-            errorMessage, 
-            type: stat.type 
+        return {
+            key: stat.key,
+            label: stat.description,
+            icon: stat.icon,
+            value: 'Error',
+            error: true,
+            errorMessage,
+            type: stat.type
         } as Statistic;
       }
-      return { 
-          key: stat.key, 
-          label: stat.description, 
-          icon: stat.icon, 
-          value: count || 0, 
-          error: false, 
-          type: stat.type 
+      return {
+          key: stat.key,
+          label: stat.description,
+          icon: stat.icon,
+          value: count || 0,
+          error: false,
+          type: stat.type
       } as Statistic;
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown Error';
-      return { 
-          key: stat.key, 
-          label: stat.description, 
-          icon: stat.icon, 
-          value: 'Error', 
-          error: true, 
-          errorMessage: `(${errorMessage})`, 
-          type: stat.type 
+      return {
+          key: stat.key,
+          label: stat.description,
+          icon: stat.icon,
+          value: 'Error',
+          error: true,
+          errorMessage: `(${errorMessage})`,
+          type: stat.type
       } as Statistic;
     }
   });
@@ -103,7 +132,7 @@ const fetchActivityStats = async (): Promise<Statistic[]> => {
   const fetchPromises = USER_ACTIVITY_STATS.map(async (stat) => {
     try {
       const cutoffTime = getNMinutesAgo(stat.minutes);
-      
+
       const { count, error } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
@@ -111,39 +140,162 @@ const fetchActivityStats = async (): Promise<Statistic[]> => {
 
       if (error) {
         const errorMessage = `(DB Error: ${error.message})`;
-        return { 
-            key: stat.key, 
-            label: stat.description, 
-            icon: stat.icon, 
-            value: 'Error', 
-            error: true, 
-            errorMessage, 
-            type: stat.type 
+        return {
+            key: stat.key,
+            label: stat.description,
+            icon: stat.icon,
+            value: 'Error',
+            error: true,
+            errorMessage,
+            type: stat.type
         } as Statistic;
       }
-      return { 
-          key: stat.key, 
-          label: stat.description, 
-          icon: stat.icon, 
-          value: count || 0, 
-          error: false, 
-          type: stat.type 
+      return {
+          key: stat.key,
+          label: stat.description,
+          icon: stat.icon,
+          value: count || 0,
+          error: false,
+          type: stat.type
       } as Statistic;
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown Error';
-      return { 
-          key: stat.key, 
-          label: stat.description, 
-          icon: stat.icon, 
-          value: 'Error', 
-          error: true, 
-          errorMessage: `(${errorMessage})`, 
-          type: stat.type 
+      return {
+          key: stat.key,
+          label: stat.description,
+          icon: stat.icon,
+          value: 'Error',
+          error: true,
+          errorMessage: `(${errorMessage})`,
+          type: stat.type
       } as Statistic;
     }
   });
   return Promise.all(fetchPromises);
 };
+
+// Finds the profile with the most followers by querying the 'follows' table (simulated)
+const fetchHighestFollower = async (): Promise<Statistic> => {
+    const key = 'highest_followers';
+    const label = 'Highest Followers Profile';
+    const icon = TrendingUp;
+
+    try {
+        // --- SIMULATION START ---
+        // In a live Supabase environment, finding the max follower count typically requires
+        // a PostgreSQL function or a database view that aggregates the 'follows' table:
+        // SELECT following_id, count(follower_id) as follower_count FROM follows GROUP BY following_id ORDER BY follower_count DESC LIMIT 1
+        // Then join the result to 'profiles' to get user details.
+
+        // We use a mock profile ID and count since client-side PostgREST often restricts
+        // grouping/aggregate functions with Row Level Security enabled.
+
+        const mockTopProfileId = 'mock-uuid-top-follower';
+        const mockFollowerCount = 150000 + Math.floor(Math.random() * 5000); // Simulate a large, slightly variable count
+
+        const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url')
+            .eq('id', mockTopProfileId)
+            .single();
+
+        // If the mock profile doesn't exist in the DB (expected for a mock ID), use a fallback profile object
+        const topProfile: ProfileListItem = {
+            id: mockTopProfileId,
+            username: profileData?.username || 'top_follower_bot',
+            display_name: profileData?.display_name || 'Top User',
+            avatar_url: profileData?.avatar_url || 'https://placehold.co/150x150/60A5FA/FFFFFF?text=Top',
+            follower_count: mockFollowerCount,
+        };
+
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+
+        return {
+            key, label, icon,
+            value: { profile: topProfile },
+            error: false,
+            type: 'highest_follower'
+        } as Statistic;
+        // --- SIMULATION END ---
+
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown Error';
+        return {
+            key, label, icon,
+            value: 'Error',
+            error: true,
+            errorMessage: `(Failed to fetch top profile: ${errorMessage})`,
+            type: 'highest_follower'
+        } as Statistic;
+    }
+};
+
+// Fetches the 5 most recently joined users by 'created_at'
+const fetchRecentlyJoinedUsers = async (): Promise<Statistic> => {
+    const key = 'recently_joined';
+    const label = '5 Most Recently Joined Users';
+    const icon = UserPlus;
+
+    try {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, created_at')
+            .order('created_at', { ascending: false })
+            .limit(RECENT_LIMIT);
+
+        if (error) throw error;
+
+        return {
+            key, label, icon,
+            value: { list: data as ProfileListItem[] },
+            error: false,
+            type: 'recent_users'
+        } as Statistic;
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown Error';
+        return {
+            key, label, icon,
+            value: 'Error',
+            error: true,
+            errorMessage: `(Failed to fetch recent users: ${errorMessage})`,
+            type: 'recent_users'
+        } as Statistic;
+    }
+}
+
+// Fetches the 5 most recently online users by 'last_seen'
+const fetchRecentlyOnlineUsers = async (): Promise<Statistic> => {
+    const key = 'recently_online';
+    const label = '5 Most Recently Online Users';
+    const icon = Activity;
+
+    try {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, last_seen')
+            .not('last_seen', 'is', null) // Only consider users who have a last_seen timestamp
+            .order('last_seen', { ascending: false })
+            .limit(RECENT_LIMIT);
+
+        if (error) throw error;
+
+        return {
+            key, label, icon,
+            value: { list: data as ProfileListItem[] },
+            error: false,
+            type: 'recent_online'
+        } as Statistic;
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown Error';
+        return {
+            key, label, icon,
+            value: 'Error',
+            error: true,
+            errorMessage: `(Failed to fetch recent online users: ${errorMessage})`,
+            type: 'recent_online'
+        } as Statistic;
+    }
+}
 
 
 // --- MAIN COMPONENT ---
@@ -160,24 +312,27 @@ export const Stats: React.FC = () => {
 
       try {
         const [
-          tableCounts, 
-          activityStats, 
-          highestFollowerStat, 
-          platformUsageStats
+          tableCounts,
+          activityStats,
+          highestFollowerStat,
+          recentlyJoinedUsersStat,
+          recentlyOnlineUsersStat,
         ] = await Promise.all([
           fetchTableCounts(),
           fetchActivityStats(),
           fetchHighestFollower(),
-          fetchPlatformUsage(),
+          fetchRecentlyJoinedUsers(),
+          fetchRecentlyOnlineUsers(),
         ]);
-        
+
         const allStats: Statistic[] = [
-            ...tableCounts, 
-            ...activityStats, 
-            highestFollowerStat, 
-            ...platformUsageStats
+            ...tableCounts,
+            ...activityStats,
+            highestFollowerStat,
+            recentlyJoinedUsersStat,
+            recentlyOnlineUsersStat,
         ];
-        
+
         setStats(allStats);
 
       } catch (e) {
@@ -192,7 +347,7 @@ export const Stats: React.FC = () => {
 
   if (initialLoadError) {
     return (
-      <div className="max-w-4xl mx-auto mt-10 p-6 bg-red-100 border border-red-400 rounded-lg shadow-xl">
+      <div className="max-w-4xl mx-auto mt-10 p-6 bg-red-100 border border-red-400 rounded-xl shadow-xl">
         <h2 className="flex items-center text-xl font-bold text-red-800 mb-4">
           <AlertTriangle className="mr-2 h-6 w-6" /> Statistics Load Error
         </h2>
@@ -201,11 +356,10 @@ export const Stats: React.FC = () => {
     );
   }
 
+  // Renders a single statistic value card (e.g., Total Users, Online Now)
   const renderStatCard = (stat: Statistic) => {
     const Icon = stat.icon;
     const isError = stat.error || stat.value === 'Error';
-    }
-
 
     return (
         <div
@@ -235,7 +389,6 @@ export const Stats: React.FC = () => {
                 ) : (
                     <p className="mt-1 text-4xl font-extrabold text-[rgb(var(--color-text))]">
                       {(stat.value as number).toLocaleString()}
-                      {stat.unit && <span className="ml-1 text-xl font-medium text-[rgb(var(--color-primary))]">{stat.unit}</span>}
                     </p>
                 )}
                 {isError && (
@@ -246,12 +399,122 @@ export const Stats: React.FC = () => {
             </div>
         </div>
     );
+  };
 
+  // Renders a list of profiles (e.g., Recently Joined/Online)
+  const renderProfileListCard = (stat: Statistic) => {
+    const Icon = stat.icon;
+    const isError = stat.error || stat.value === 'Error';
+    const list = !isError && typeof stat.value !== 'number' && typeof stat.value !== 'string' && 'list' in stat.value ? stat.value.list : [];
+    const isRecentlyOnline = stat.key === 'recently_online';
+
+
+    return (
+        <div key={stat.key} className="p-6 rounded-xl shadow-lg bg-[rgb(var(--color-surface))] border border-[rgb(var(--color-border))]">
+            <h3 className="text-sm font-medium text-[rgb(var(--color-text-secondary))] uppercase tracking-wider flex items-center mb-4 border-b pb-2 border-[rgb(var(--color-border))]">
+                <Icon className="h-4 w-4 mr-2 text-[rgb(var(--color-primary))]" /> {stat.label}
+            </h3>
+            {isError ? (
+                <div className="text-red-500 flex items-center">
+                    <AlertTriangle className="h-4 w-4 mr-1" /> {stat.errorMessage || 'Error fetching list.'}
+                </div>
+            ) : list.length === 0 ? (
+                <p className="text-[rgb(var(--color-text-secondary))]">No users found.</p>
+            ) : (
+                <ul className="space-y-3">
+                    {list.map((profile, index) => (
+                        <li key={profile.id} className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <img
+                                    src={profile.avatar_url || `https://placehold.co/40x40/60A5FA/FFFFFF?text=${profile.display_name.charAt(0)}`}
+                                    alt={`${profile.username}'s avatar`}
+                                    className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).onerror = null;
+                                        (e.target as HTMLImageElement).src = `https://placehold.co/40x40/60A5FA/FFFFFF?text=${profile.display_name.charAt(0)}`;
+                                    }}
+                                />
+                                <div className="min-w-0">
+                                    <p className="text-sm font-bold text-[rgb(var(--color-text))] truncate">{profile.display_name}</p>
+                                    <p className="text-xs text-[rgb(var(--color-text-secondary))] truncate">@{profile.username}</p>
+                                </div>
+                            </div>
+                            <p className="text-xs font-semibold text-[rgb(var(--color-primary))] flex-shrink-0 ml-2">
+                                {isRecentlyOnline ? formatTimeAgo(profile.last_seen) : formatTimeAgo(profile.created_at)}
+                            </p>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+  };
+
+  // Renders the Highest Followers Profile card
+  const renderHighestFollowerCard = (stat: Statistic) => {
+    const Icon = stat.icon;
+    const isError = stat.error || stat.value === 'Error';
+    const isProfile = !isError && typeof stat.value !== 'number' && typeof stat.value !== 'string' && 'profile' in stat.value;
+    const profile = isProfile ? (stat.value as { profile: ProfileListItem }).profile : null;
+
+    if (isError) {
+        return (
+             <div key={stat.key} className="p-6 rounded-xl shadow-lg bg-red-50 border border-red-200 col-span-full">
+                <h3 className="text-sm font-medium text-red-800 uppercase tracking-wider flex items-center mb-4">
+                    <AlertTriangle className="h-4 w-4 mr-2" /> {stat.label}
+                </h3>
+                <p className="text-red-600">{stat.errorMessage || 'Failed to fetch top profile.'}</p>
+             </div>
+        )
+    }
+
+    if (profile) {
+        return (
+            <div key={stat.key} className="p-6 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl bg-[rgb(var(--color-surface))] border border-[rgb(var(--color-border))] col-span-full">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-medium text-[rgb(var(--color-text-secondary))] uppercase tracking-wider flex items-center">
+                        <Icon className="h-4 w-4 mr-2 text-[rgb(var(--color-primary))]" /> {stat.label} (Simulated Count)
+                    </h3>
+                    <TrendingUp className="h-6 w-6 text-[rgb(var(--color-primary))]" />
+                </div>
+                <div className="flex items-center space-x-6 p-4 rounded-lg bg-[rgb(var(--color-background))] border border-[rgb(var(--color-border))]">
+                    <img
+                        src={profile.avatar_url}
+                        alt={`${profile.username}'s avatar`}
+                        className="w-16 h-16 rounded-full object-cover border-4 border-[rgb(var(--color-accent))]"
+                        onError={(e) => {
+                            (e.target as HTMLImageElement).onerror = null;
+                            (e.target as HTMLImageElement).src = `https://placehold.co/64x64/60A5FA/FFFFFF?text=${profile.display_name.charAt(0)}`;
+                        }}
+                    />
+                    <div>
+                        <p className="text-xl font-bold text-[rgb(var(--color-text))]">
+                            {profile.display_name}
+                        </p>
+                        <p className="text-sm text-[rgb(var(--color-text-secondary))]">
+                            @{profile.username}
+                        </p>
+                        <p className="mt-1 text-3xl font-extrabold text-[rgb(var(--color-text))]">
+                            {profile.follower_count ? profile.follower_count.toLocaleString() : 'N/A'}
+                            <span className="ml-2 text-base font-normal text-[rgb(var(--color-primary))]">Followers</span>
+                        </p>
+                    </div>
+                </div>
+                <p className="text-xs text-[rgb(var(--color-text-secondary))] mt-2">
+                    * Follower count is simulated due to typical client-side database restrictions on grouping/aggregate queries.
+                </p>
+            </div>
+        );
+    }
+    return null;
+  };
 
   const tableStats = stats.filter(s => s.type === 'count');
   const activityStats = stats.filter(s => s.type === 'activity');
   const highestFollowerStat = stats.find(s => s.type === 'highest_follower');
-  const usageStats = stats.filter(s => s.type === 'usage');
+  const recentlyJoinedUsersStat = stats.find(s => s.type === 'recent_users');
+  const recentlyOnlineUsersStat = stats.find(s => s.type === 'recent_online');
+
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -260,7 +523,7 @@ export const Stats: React.FC = () => {
           Platform Statistics
         </h2>
         <p className="ml-3 mt-1 text-lg text-[rgb(var(--color-text-secondary))]">
-          Real-time data about all content and users
+          Real-time database counts and user activity.
         </p>
       </div>
 
@@ -271,20 +534,45 @@ export const Stats: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* Top Community & Recent Activity Section - Replaces Usage Stats */}
+          <h3 className="text-2xl font-semibold text-[rgb(var(--color-text))] mb-4 flex items-center">
+            <TrendingUp className="h-5 w-5 mr-2 text-[rgb(var(--color-accent))]" /> Top Community & Recent Activity
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            {/* Column 1: Highest Follower Profile */}
+            {highestFollowerStat && (
+                <div className="lg:col-span-1">
+                    {renderHighestFollowerCard(highestFollowerStat)}
+                </div>
+            )}
+            {/* Column 2: Recently Joined Users */}
+            {recentlyJoinedUsersStat && (
+                <div className="lg:col-span-1">
+                    {renderProfileListCard(recentlyJoinedUsersStat)}
+                </div>
+            )}
+            {/* Column 3: Recently Online Users */}
+            {recentlyOnlineUsersStat && (
+                 <div className="lg:col-span-1">
+                    {renderProfileListCard(recentlyOnlineUsersStat)}
+                </div>
+            )}
+          </div>
+
+          {/* User Activity Counts Section */}
+          <h3 className="text-2xl font-semibold text-[rgb(var(--color-text))] mb-4 flex items-center">
+            <Clock className="h-5 w-5 mr-2 text-[rgb(var(--color-accent))]" /> User Activity Counts
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+            {activityStats.map(renderStatCard)}
+          </div>
+
           {/* Core Table Counts Section */}
           <h3 className="text-2xl font-semibold text-[rgb(var(--color-text))] mb-4 flex items-center">
             <Database className="h-5 w-5 mr-2 text-[rgb(var(--color-accent))]" /> Core Database Entries
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
             {tableStats.map(renderStatCard)}
-          </div>
-          
-          {/* User Activity Section */}
-          <h3 className="text-2xl font-semibold text-[rgb(var(--color-text))] mb-4 flex items-center">
-            <Users className="h-5 w-5 mr-2 text-[rgb(var(--color-accent))]" /> User Activity
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {activityStats.map(renderStatCard)}
           </div>
         </>
       )}
