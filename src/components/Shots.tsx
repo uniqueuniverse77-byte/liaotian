@@ -174,24 +174,6 @@ export const Shots = () => {
     if (data) setCommentsList(data as Comment[]);
   };
 
-  const fetchLikers = useCallback(async (postId: string) => {
-    const { data } = await supabase
-      .from('likes')
-      .select('user_id, profiles(username, display_name, avatar_url, verified)')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: true });
-      
-    if (data) {
-      setLikersList(data as Liker[]);
-    }
-  }, []);
-
-  const showLikes = useCallback((postId: string) => {
-    setActiveCommentsId(null); // Close comments if open
-    setActiveLikesId(postId); // Open likes modal
-    fetchLikers(postId);
-  }, [fetchLikers]);
-
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !activeCommentsId || !newCommentText.trim()) return;
@@ -270,12 +252,7 @@ export const Shots = () => {
                     className={likedPostIds.has(video.id) ? "fill-red-500 text-red-500" : "text-white"} 
                   />
                 </button>
-                <span 
-                  onClick={() => showLikes(video.id)}
-                  className="text-white text-xs font-bold mt-1 cursor-pointer hover:underline"
-                >
-                  {video.likes?.[0]?.count || 0}
-                </span>
+                <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{video.like_count}</span>
               </div>
 
               <div className="flex flex-col items-center gap-1">
@@ -285,12 +262,7 @@ export const Shots = () => {
                 >
                   <MessageCircle size={28} className="text-white" />
                 </button>
-                <span 
-                  onClick={() => openComments(video.id)}
-                  className="text-white text-xs font-bold mt-1 cursor-pointer hover:underline"
-                >
-                  {video.comments?.[0]?.count || 0}
-                </span>
+                <span className="text-white text-xs font-bold shadow-black drop-shadow-md">{video.comment_count}</span>
               </div>
 
               <button className="p-3 bg-white/10 backdrop-blur-sm rounded-full transition active:scale-90">
