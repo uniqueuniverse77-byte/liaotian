@@ -174,49 +174,76 @@ const fetchActivityStats = async (): Promise<Statistic[]> => {
   return Promise.all(fetchPromises);
 };
 
-// Finds the profile with the most followers by querying the 'follows' table (simulated)
+// Finds the profile with the most followers by querying the 'follows' table and manually aggregating
 const fetchHighestFollower = async (): Promise<Statistic> => {
     const key = 'highest_followers';
     const label = 'Highest Followers Profile';
     const icon = TrendingUp;
 
     try {
-        // --- SIMULATION START ---
-        // In a live Supabase environment, finding the max follower count typically requires
-        // a PostgreSQL function or a database view that aggregates the 'follows' table:
-        // SELECT following_id, count(follower_id) as follower_count FROM follows GROUP BY following_id ORDER BY follower_count DESC LIMIT 1
-        // Then join the result to 'profiles' to get user details.
-
-        // We use a mock profile ID and count since client-side PostgREST often restricts
-        // grouping/aggregate functions with Row Level Security enabled.
-
-        const mockTopProfileId = 'mock-uuid-top-follower';
-        const mockFollowerCount = 150000 + Math.floor(Math.random() * 5000); // Simulate a large, slightly variable count
-
-        const { data: profileData, error: profileError } = await supabase
+        // 1. Fetch all profiles
+        const { data: profilesData, error: profilesError } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url')
-            .eq('id', mockTopProfileId)
-            .single();
+            .select('id, username, display_name, avatar_url');
 
-        // If the mock profile doesn't exist in the DB (expected for a mock ID), use a fallback profile object
-        const topProfile: ProfileListItem = {
-            id: mockTopProfileId,
-            username: profileData?.username || 'top_follower_bot',
-            display_name: profileData?.display_name || 'Top User',
-            avatar_url: profileData?.avatar_url || 'https://placehold.co/150x150/60A5FA/FFFFFF?text=Top',
-            follower_count: mockFollowerCount,
-        };
+        if (profilesError) throw profilesError;
 
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+        // 2. Fetch all follows
+        // NOTE: This relies on Row Level Security (RLS) allowing a bulk read of the 'follows' table.
+        const { data: followsData, error: followsError } = await supabase
+            .from('follows')
+            .select('following_id'); // 'following_id' is the ID of the user being followed
+
+        if (followsError) throw followsError;
+
+        // 3. Aggregate followers count
+        const followerCounts: { [key: string]: number } = {};
+        for (const follow of followsData) {
+            const followedId = follow.following_id;
+            followerCounts[followedId] = (followerCounts[followedId] || 0) + 1;
+        }
+
+        // 4. Find the profile with the highest count
+        let topProfileId: string | null = null;
+        let maxFollowers = -1;
+
+        for (const [id, count] of Object.entries(followerCounts)) {
+            if (count > maxFollowers) {
+                maxFollowers = count;
+                topProfileId = id;
+            }
+        }
+
+        // 5. Find the full profile data for the top ID
+        const topProfileData = profilesData.find(p => p.id === topProfileId);
+
+        let finalProfile: ProfileListItem;
+
+        if (topProfileData && topProfileId) {
+             finalProfile = {
+                id: topProfileId,
+                username: topProfileData.username,
+                display_name: topProfileData.display_name,
+                avatar_url: topProfileData.avatar_url,
+                follower_count: maxFollowers,
+            };
+        } else {
+            // Fallback for when no follows exist (maxFollowers = -1) or no profile is found
+             finalProfile = {
+                id: 'N/A',
+                username: 'system',
+                display_name: 'No Followers Yet',
+                avatar_url: 'https://placehold.co/64x64/60A5FA/FFFFFF?text=NA',
+                follower_count: 0,
+            };
+        }
 
         return {
             key, label, icon,
-            value: { profile: topProfile },
+            value: { profile: finalProfile },
             error: false,
             type: 'highest_follower'
         } as Statistic;
-        // --- SIMULATION END ---
 
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown Error';
@@ -224,7 +251,7 @@ const fetchHighestFollower = async (): Promise<Statistic> => {
             key, label, icon,
             value: 'Error',
             error: true,
-            errorMessage: `(Failed to fetch top profile: ${errorMessage})`,
+            errorMessage: `(Failed to calculate top profile: ${errorMessage})`,
             type: 'highest_follower'
         } as Statistic;
     }
@@ -473,7 +500,7 @@ export const Stats: React.FC = () => {
             <div key={stat.key} className="p-6 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl bg-[rgb(var(--color-surface))] border border-[rgb(var(--color-border))] col-span-full">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-medium text-[rgb(var(--color-text-secondary))] uppercase tracking-wider flex items-center">
-                        <Icon className="h-4 w-4 mr-2 text-[rgb(var(--color-primary))]" /> {stat.label} (Simulated Count)
+                        <Icon className="h-4 w-4 mr-2 text-[rgb(var(--color-primary))]" /> {stat.label}
                     </h3>
                     <TrendingUp className="h-6 w-6 text-[rgb(var(--color-primary))]" />
                 </div>
@@ -500,9 +527,6 @@ export const Stats: React.FC = () => {
                         </p>
                     </div>
                 </div>
-                <p className="text-xs text-[rgb(var(--color-text-secondary))] mt-2">
-                    * Follower count is simulated due to typical client-side database restrictions on grouping/aggregate queries.
-                </p>
             </div>
         );
     }
