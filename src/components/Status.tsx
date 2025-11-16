@@ -35,12 +35,10 @@ const useActiveStatuses = () => {
     }
 
     try {
-      // 🐛 FIX: Explicitly name the foreign key column for the join
-      // Syntax: 'table_name!fk_column_name(columns_to_select)'
-      // If `user_id` is the foreign key on `statuses` pointing to `profiles`, use `profiles:user_id(*)`
+      // 🐛 FIX 1: Reverted to canonical implicit embedding for statuses/profiles join
       let query = supabase
         .from('statuses')
-        .select('*, profiles:user_id(*)') // <-- EXPLICIT JOIN FIX
+        .select('*, profiles(*)') // <-- Canonical PostgREST embedding
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(50);
@@ -49,13 +47,14 @@ const useActiveStatuses = () => {
       let followIds: string[] = [user.id]; // Always include own ID
       if (FOLLOW_ONLY_FEED) {
         try {
-          const { data: follows, error: followError } = await supabase.from('follows').select('followed_id').eq('follower_id', user.id);
-          // ⚠️ Note: The follow query itself is also returning 400. This is outside Status.tsx but related.
-          // The error "HTTP/2 400" on the 'follows' query suggests RLS or table/column name issues there.
+          // 🐛 FIX 2: Corrected column name to 'followed_user_id' to resolve 42703 error
+          const { data: follows, error: followError } = await supabase.from('follows').select('followed_user_id').eq('follower_id', user.id);
+          
           if (followError) {
-             console.warn('Error fetching follows (PGRST likely related to RLS or missing table):', followError);
+             console.warn('Error fetching follows (Check RLS or column name "followed_user_id"):', followError);
           }
-          followIds = [...followIds, ...(follows?.map(f => f.followed_id) || [])];
+          // Mapping follows results (adjust key if 'followed_user_id' is wrong)
+          followIds = [...followIds, ...(follows?.map(f => f.followed_user_id) || [])];
         } catch (followError) {
           console.warn('Follows table not found or error fetching follows:', followError);
         }
@@ -715,10 +714,10 @@ export const StatusArchive: React.FC = () => {
     }
     const fetchAll = async () => {
       try {
-        // FIX: Explicitly name the foreign key column for the join
+        // 🐛 FIX 1: Reverted to canonical implicit embedding for statuses/profiles join
         const { data, error } = await supabase
           .from('statuses')
-          .select('*, profiles:user_id(*)') // <-- EXPLICIT JOIN FIX
+          .select('*, profiles(*)') // <-- Canonical PostgREST embedding
           .eq('user_id', user.id) // IMPORTANT: Filter by current user ID
           .order('created_at', { ascending: false });
         
@@ -741,7 +740,7 @@ export const StatusArchive: React.FC = () => {
     return (
       <div className="p-8 text-center text-[rgb(var(--color-text-secondary))]">
         <Archive size={48} className="mx-auto mb-4 opacity-50" />
-        <p>No statuses in your archive yet.</p>
+        <p>No statuses in your archive yet. (If statuses exist, check your RLS policy: 'Users can read own archive' must be enabled and correct.)</p>
       </div>
     );
   }
