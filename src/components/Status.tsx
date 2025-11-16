@@ -9,11 +9,12 @@ const FOLLOW_ONLY_FEED = import.meta.env.VITE_FOLLOW_ONLY_FEED === 'true';
 
 // Simple hook for mobile detection
 const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();  // Initial check
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
   return isMobile;
 };
@@ -44,7 +45,11 @@ export const StatusTray: React.FC = () => {
         query = query.in('user_id', [user.id, ...followIds]);
       }
 
-      const { data } = await query;
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching statuses:', error);
+        return;
+      }
       if (!data) return;
 
       // Group by user_id, take latest per user
@@ -68,7 +73,7 @@ export const StatusTray: React.FC = () => {
   }, [user]);
 
   const handleOwnClick = () => {
-    setShowStatusCreator(true);  // Trigger global modal via dispatchEvent or context; for simplicity, use custom event
+    // Trigger global modal via dispatchEvent or context; for simplicity, use custom event
     window.dispatchEvent(new CustomEvent('openStatusCreator'));
   };
 
@@ -76,15 +81,6 @@ export const StatusTray: React.FC = () => {
     navigate(`/?status=${statusUserId}`);  // Or set global state
     window.dispatchEvent(new CustomEvent('openStatusViewer', { detail: { userId: statusUserId } }));
   };
-
-  // Listen for creator open (from + click)
-  useEffect(() => {
-    const handleOpenCreator = () => setShowStatusCreator(true);
-    window.addEventListener('openStatusCreator', handleOpenCreator);
-    return () => window.removeEventListener('openStatusCreator', handleOpenCreator);
-  }, []);
-
-  const [showStatusCreator, setShowStatusCreator] = useState(false);
 
   return (
     <div className="flex space-x-4 p-4 overflow-x-auto scrollbar-hide bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))]">
@@ -169,23 +165,30 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   // Capture photo
   const capturePhoto = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await new Promise(resolve => videoRef.current?.addEventListener('loadedmetadata', resolve));
-      const canvas = canvasRef.current;
-      if (canvas && videoRef.current) {
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(videoRef.current, 0, 0);
-        canvas.toBlob((blob) => {
-          setMediaBlob(blob!);
-          setMediaType('image');
-          setStep('edit');
-          stream.getTracks().forEach(track => track.stop());
-        }, 'image/jpeg');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await new Promise(resolve => videoRef.current?.addEventListener('loadedmetadata', resolve));
+        const canvas = canvasRef.current;
+        if (canvas && videoRef.current) {
+          canvas.width = videoRef.current.videoWidth;
+          canvas.height = videoRef.current.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(videoRef.current, 0, 0);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              setMediaBlob(blob);
+              setMediaType('image');
+              setStep('edit');
+            }
+            stream.getTracks().forEach(track => track.stop());
+          }, 'image/jpeg');
+        }
       }
+    } catch (err) {
+      console.error('Error capturing photo:', err);
+      alert('Failed to access camera. Please check permissions.');
     }
   };
 
@@ -195,22 +198,27 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const chunksRef = useRef<BlobPart[]>([]);
 
   const startRecord = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      mediaRecorderRef.current.ondataavailable = (e) => chunksRef.current.push(e.data);
+      mediaRecorderRef.current.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        setMediaBlob(blob);
+        setMediaType('video');
+        setStep('edit');
+        stream.getTracks().forEach(track => track.stop());
+        chunksRef.current = [];
+      };
+      mediaRecorderRef.current.start();
+      setRecording(true);
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      alert('Failed to access camera/mic. Please check permissions.');
     }
-    mediaRecorderRef.current = new MediaRecorder(stream);
-    mediaRecorderRef.current.ondataavailable = (e) => chunksRef.current.push(e.data);
-    mediaRecorderRef.current.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      setMediaBlob(blob);
-      setMediaType('video');
-      setStep('edit');
-      stream.getTracks().forEach(track => track.stop());
-      chunksRef.current = [];
-    };
-    mediaRecorderRef.current.start();
-    setRecording(true);
   };
 
   const stopRecord = () => {
@@ -257,21 +265,44 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   // Post status
   const handlePost = async () => {
     if (!user || !mediaBlob) return;
-    const { data: upload } = await uploadStatusMedia(mediaBlob as File);
-    if (upload) {
-      const { error } = await supabase
+
+    try {
+      // Convert Blob to File if necessary (to ensure .name exists for upload)
+      let uploadFile: File;
+      if (mediaBlob instanceof File) {
+        uploadFile = mediaBlob;
+      } else {
+        const defaultName = mediaType === 'image' ? 'status.jpg' : 'status.webm';
+        uploadFile = new File([mediaBlob], defaultName, { type: mediaBlob.type });
+      }
+
+      const uploadResult = await uploadStatusMedia(uploadFile);
+      if (!uploadResult) {
+        alert('Upload failed. Please try again.');
+        return;
+      }
+
+      const { error: insertError } = await supabase
         .from('statuses')
         .insert({
-          media_url: upload.url,
+          media_url: uploadResult.url,
           media_type: mediaType,
           text_overlay: textOverlay.text ? textOverlay : {},
         });
-      if (!error) {
-        onClose();
-        setStep('capture');
-        setMediaBlob(null);
-        setTextOverlay({ text: '', x: 50, y: 50, fontSize: 24, color: 'white' });
+
+      if (insertError) {
+        console.error('Error inserting status:', insertError);
+        alert('Failed to post status. Please try again.');
+        return;
       }
+
+      onClose();
+      setStep('capture');
+      setMediaBlob(null);
+      setTextOverlay({ text: '', x: 50, y: 50, fontSize: 24, color: 'white' });
+    } catch (err) {
+      console.error('Error posting status:', err);
+      alert('An error occurred while posting. Please try again.');
     }
   };
 
@@ -361,12 +392,16 @@ const StatusViewer: React.FC<{ userId: string; onClose: () => void }> = ({ userI
 
   useEffect(() => {
     const fetchStatuses = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('statuses')
         .select('*, profiles!user_id(*)')
         .eq('user_id', userId)
         .gt('expires_at', new Date().toISOString())  // Active only
         .order('created_at', { ascending: true });
+      if (error) {
+        console.error('Error fetching statuses:', error);
+        return;
+      }
       setStatuses(data || []);
       if (data && data.length > 0) setCurrentIndex(0);
     };
@@ -427,11 +462,15 @@ export const StatusArchive: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     const fetchAll = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('statuses')
         .select('*, profiles!user_id(*)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching archive:', error);
+        return;
+      }
       setAllStatuses(data || []);
     };
     fetchAll();
@@ -501,11 +540,11 @@ export const StatusSidebar: React.FC<StatusSidebarProps> = ({ show, onClose, set
 
   return (
     <div className={`
-      ${isMobile ? 'fixed' : 'relative'} left-0 top-0 h-full w-64 bg-[rgb(var(--color-surface))] border-r border-[rgb(var(--color-border))] z-[99]
-      ${isMobile ? (show ? 'translate-x-0' : '-translate-x-full') : ''}
-      transition-transform duration-300 shadow-lg flex-shrink-0
+      fixed left-0 top-0 h-full w-64 bg-[rgb(var(--color-surface))] border-r border-[rgb(var(--color-border))] z-[99]
+      ${isMobile ? (show ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0'}
+      transition-transform duration-300 shadow-lg
     `}>
-      <nav className="p-4 space-y-2 flex-1">
+      <nav className="p-4 space-y-2 h-full">
         {menuItems.map((item, idx) => (
           <button
             key={idx}
