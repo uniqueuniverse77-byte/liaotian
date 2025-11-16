@@ -44,7 +44,7 @@ export const StatusTray: React.FC = () => {
         let statusQuery = supabase
           .from('statuses')
           .select('*, profiles!user_id(*)')
-          .gt('expires_at', new Date().toISOString())
+          .gt('expires_at', new Date().toISOString()) // <-- Expiration logic is here
           .order('created_at', { ascending: true });
 
         if (FOLLOW_ONLY_FEED) {
@@ -215,8 +215,9 @@ export const StatusTray: React.FC = () => {
               />
               {renderRing(statusUser)}
             </div>
-            <span className="text-xs text-center text-[rgb(var(--color-text-secondary))] truncate w-16">
-              {statusUser.display_name || statusUser.username}
+            <span className="text-xs text-center text-[rgb(var(--color-text-secondary))] truncate w-16 flex items-center justify-center gap-1">
+              <span className="truncate">{statusUser.display_name || statusUser.username}</span>
+              {statusUser.verified && <BadgeCheck size={12} className="text-blue-500 flex-shrink-0" />}
             </span>
           </div>
         ))}
@@ -357,8 +358,14 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setIsRecording(true);
     audioChunksRef.current = [];
     
+    // --- FIX: Prioritize 'video/mp4' for Safari/iOS support ---
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4')
+        ? 'video/mp4'
+        : 'video/webm';
+    const fileExtension = mimeType.split('/')[1] || 'webm';
+
     mediaRecorderRef.current = new MediaRecorder(mediaStreamRef.current, {
-        mimeType: 'video/webm' // Use webm for broad support
+        mimeType: mimeType
     });
     
     mediaRecorderRef.current.ondataavailable = (e) => {
@@ -366,8 +373,8 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     };
     
     mediaRecorderRef.current.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'video/webm' });
-        setMediaFile(new File([blob], 'status.webm', { type: 'video/webm' }));
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        setMediaFile(new File([blob], `status.${fileExtension}`, { type: mimeType }));
         setMediaPreviewUrl(URL.createObjectURL(blob));
         setMediaType('video');
         setIsRecording(false);
@@ -396,6 +403,9 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       const uploadResult = await uploadStatusMedia(mediaFile);
       if (!uploadResult) throw new Error('Upload failed.');
 
+      // --- FIX: Add expires_at timestamp (24 hours from now) ---
+      const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
       await supabase
         .from('statuses')
         .insert({
@@ -409,7 +419,7 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             color: 'white',
             fontSize: 24
           } : {},
-          // viewed_by array is defaulted to empty
+          expires_at: expires_at // <-- ADDED
         });
       
       onClose(); // Success
@@ -562,6 +572,35 @@ const StatusCreator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 //  3. STATUS VIEWER (AND SUB-COMPONENTS)
 //  Upgraded with "Viewed by" list, profile nav, and DM replies.
 // =======================================================================
+
+// --- NEW: Time Ago Helper Function ---
+const formatTimeAgo = (timestamp: string): string => {
+    const now = new Date();
+    const past = new Date(timestamp);
+    const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000);
+
+    if (diffInSeconds < 60) {
+        return `${diffInSeconds}s ago`;
+    }
+    
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) {
+        return `${diffInMinutes}m ago`;
+    }
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) {
+        const minutes = diffInMinutes % 60;
+        if (minutes > 0) {
+             return `${diffInHours}h ${minutes}m ago`;
+        }
+        return `${diffInHours}h ago`;
+    }
+    
+    // Fallback for > 24h, though statuses should expire
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays}d ago`;
+};
 
 // --- NEW, ROBUST StoryProgressBar ---
 const StoryProgressBar: React.FC<{
@@ -966,9 +1005,18 @@ const StatusViewer: React.FC<{
             className="w-10 h-10 rounded-full group-hover:opacity-80 transition"
             alt={currentUser.display_name}
           />
-          <div className="flex flex-col items-start">
-            <span className="text-white font-bold text-sm group-hover:underline">{currentUser.display_name}</span>
-            <span className="text-white/70 text-xs">@{currentUser.username}</span>
+          <div className="flex items-center gap-2"> {/* <-- WRAP this */}
+            <div className="flex flex-col items-start">
+              <span className="text-white font-bold text-sm group-hover:underline flex items-center gap-1">
+                {currentUser.display_name}
+                {currentUser.verified && <BadgeCheck size={14} className="text-white" />}
+              </span>
+              <span className="text-white/70 text-xs">@{currentUser.username}</span>
+            </div>
+            {/* --- ADDED Time Ago --- */}
+            <span className="text-white/70 text-xs">
+                {formatTimeAgo(currentStory.created_at)}
+            </span>
           </div>
         </button>
       </div>
@@ -1121,7 +1169,7 @@ export const StatusArchive: React.FC = () => {
             ) : (
               <video src={status.media_url} className="w-full aspect-square object-cover rounded" muted />
             )}
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-end p-2 rounded transition-opacity">
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-1G00 flex items-end p-2 rounded transition-opacity">
               <span className="text-white text-sm truncate">{new Date(status.created_at).toLocaleDateString()}</span>
             </div>
           </div>
