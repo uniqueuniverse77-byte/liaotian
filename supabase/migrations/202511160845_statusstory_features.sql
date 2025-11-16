@@ -47,3 +47,19 @@ ALTER TABLE statuses DROP CONSTRAINT IF EXISTS statuses_user_id_fkey;
 
 -- Add new FK to profiles.id (assuming profiles table exists with id referencing auth.users)
 ALTER TABLE statuses ADD CONSTRAINT statuses_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles (id) ON DELETE CASCADE;
+
+
+
+
+create or replace function mark_status_viewed(status_id uuid, viewer_id uuid)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  update public.statuses
+  set viewed_by = array_append(viewed_by, viewer_id)
+  where id = status_id
+  and not (viewed_by @> ARRAY[viewer_id]); -- Check if viewer_id is already in the array
+end;
+$$;
