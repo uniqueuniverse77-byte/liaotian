@@ -411,6 +411,11 @@ const StatusViewer: React.FC<{ userId: string; onClose: () => void }> = ({ userI
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const { user } = useAuth();
 
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+  };
+
   useEffect(() => {
     const fetchStatuses = async () => {
       try {
