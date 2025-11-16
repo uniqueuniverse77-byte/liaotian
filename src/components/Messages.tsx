@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase, Message, Profile, uploadMedia } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link, CornerUpLeft, Phone, Video, Mic } from 'lucide-react';
+import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link, CornerUpLeft, Phone, Video, Mic, Play, Pause } from 'lucide-react';
 import { Calls } from './Calls';
 
 // Define a type that includes the possible joined reply data
@@ -14,6 +14,124 @@ type AppMessage = Message & {
     media_type?: string | null;
   } | null;
 };
+
+// --- NEW AudioPlayer COMPONENT ---
+interface AudioPlayerProps {
+  src: string;
+  isOutgoing: boolean;
+}
+
+const AudioPlayer: React.FC<AudioPlayerProps> = ({ src, isOutgoing }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  const primaryColor = isOutgoing 
+    ? 'rgb(var(--color-text-on-primary))' 
+    : 'rgb(var(--color-accent))';
+  
+  const trackColor = isOutgoing 
+    ? 'rgba(var(--color-text-on-primary), 0.3)'
+    : 'rgb(var(--color-border))';
+
+  const formatTime = (time: number): string => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const setAudioData = () => {
+      setDuration(audio.duration);
+      setCurrentTime(audio.currentTime);
+    };
+
+    const setAudioTime = () => setCurrentTime(audio.currentTime);
+
+    const togglePlay = () => setIsPlaying(!audio.paused);
+
+    audio.addEventListener('loadedmetadata', setAudioData);
+    audio.addEventListener('timeupdate', setAudioTime);
+    audio.addEventListener('play', togglePlay);
+    audio.addEventListener('pause', togglePlay);
+    audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        audio.currentTime = 0; // Reset after playing
+    });
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', setAudioData);
+      audio.removeEventListener('timeupdate', setAudioTime);
+      audio.removeEventListener('play', togglePlay);
+      audio.removeEventListener('pause', togglePlay);
+      audio.removeEventListener('ended', () => {});
+    };
+  }, []);
+
+  const handlePlayPause = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      if (isPlaying) {
+        audio.pause();
+      } else {
+        audio.play();
+      }
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  return (
+    <div className="flex items-center space-x-2 w-full max-w-full mb-1">
+      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      
+      <button 
+        onClick={handlePlayPause}
+        className={`flex-shrink-0 p-2 rounded-full transition-colors`}
+        style={{
+            backgroundColor: isOutgoing 
+                ? 'rgba(var(--color-text-on-primary), 0.15)' 
+                : 'rgb(var(--color-surface-hover))',
+            color: primaryColor,
+        }}
+      >
+        {isPlaying ? <Pause size={16} fill={primaryColor} /> : <Play size={16} fill={primaryColor} />}
+      </button>
+
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <input
+          type="range"
+          min="0"
+          max={duration}
+          step="0.01"
+          value={currentTime}
+          onChange={handleSeek}
+          className="w-full h-1 appearance-none rounded-full cursor-pointer transition"
+          style={{
+            background: `linear-gradient(to right, ${primaryColor} 0%, ${primaryColor} ${((currentTime / duration) * 100) || 0}%, ${trackColor} ${((currentTime / duration) * 100) || 0}%, ${trackColor} 100%)`,
+          }}
+        />
+        <span className="text-xs flex-shrink-0" style={{ color: primaryColor }}>
+          {formatTime(currentTime)}/{formatTime(duration)}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// --- END AudioPlayer COMPONENT ---
+
 
 export const Messages = () => {
   const [conversations, setConversations] = useState<Profile[]>([]);
@@ -504,7 +622,8 @@ export const Messages = () => {
         return <video src={url} className="max-h-32 rounded-lg" controls />;
       }
       if (file.type.startsWith('audio/')) {
-        return <audio src={url} className="w-full max-w-xs" controls />;
+        // Use the custom AudioPlayer for preview
+        return <AudioPlayer src={url} isOutgoing={true} />; 
       }
       return (
         <div className="flex items-center gap-2 text-sm text-[rgb(var(--color-text))]">
@@ -521,7 +640,8 @@ export const Messages = () => {
         return <video src={remoteUrl} className="max-h-32 rounded-lg" controls />;
       }
       if (remoteUrl.match(/\.(mp3|wav|ogg|m4a)$/i)) {
-        return <audio src={remoteUrl} className="w-full max-w-xs" controls />;
+        // Use the custom AudioPlayer for remote URL preview
+        return <AudioPlayer src={remoteUrl} isOutgoing={true} />;
       }
       return (
         <div className="flex items-center gap-2 text-sm text-[rgb(var(--color-text))]">
@@ -660,7 +780,17 @@ export const Messages = () => {
                 </div>
               )}
             
-              {messages.map((msg) => (
+              {messages.map((msg) => {
+                
+                // Determine if the message is *only* an audio message (no content)
+                const isOnlyAudio = msg.media_type === 'audio' && !msg.content.trim();
+                
+                // Conditional class for max width. If it's only audio, we want it to take up more space.
+                const messageWidthClass = isOnlyAudio 
+                    ? 'max-w-[90%] sm:max-w-[80%] md:max-w-[85%]'
+                    : 'max-w-[90%] sm:max-w-[60%] md:max-w-[65%]';
+
+                return (
                 <div
                   key={msg.id}
                   className={`flex items-center gap-2 group ${msg.sender_id === user!.id ? 'justify-end' : 'justify-start'}`}
@@ -676,7 +806,7 @@ export const Messages = () => {
                   )}
 
                   <div
-                    className={`max-w-[90%] sm:max-w-[60%] md:max-w-[65%] px-3 py-2 rounded-xl shadow-md ${
+                    className={`${messageWidthClass} px-3 py-2 rounded-xl shadow-md ${
                       msg.sender_id === user!.id
                         ? 'bg-[rgb(var(--color-accent))] text-[rgb(var(--color-text-on-primary))] rounded-br-none'
                         : 'bg-[rgb(var(--color-surface))] text-[rgb(var(--color-text))] border border-[rgb(var(--color-border))] rounded-tl-none'
@@ -720,20 +850,20 @@ export const Messages = () => {
                     })()}
 
                     {msg.media_url && (
-                      <div className="mt-2">
+                      <div className={msg.content.trim() ? "mt-2" : ""}>
                         {msg.media_type === 'image' && (
-                          <img src={msg.media_url} className="mb-2 rounded-lg max-w-full h-auto" alt="Message" />
+                          <img src={msg.media_url} className={`${msg.content.trim() ? "mb-2" : ""} rounded-lg max-w-full h-auto`} alt="Message" />
                         )}
                         {msg.media_type === 'video' && (
-                          <video controls className="mb-2 rounded-lg max-w-full">
+                          <video controls className={`${msg.content.trim() ? "mb-2" : ""} rounded-lg max-w-full`}>
                             <source src={msg.media_url} />
                           </video>
                         )}
+                        {/* CUSTOM AUDIO PLAYER IMPLEMENTATION */}
                         {msg.media_type === 'audio' && (
-                          <audio controls className="mb-2 rounded-lg w-full max-w-xs">
-                            <source src={msg.media_url} />
-                            Your browser does not support the audio element.
-                          </audio>
+                          <div className={msg.content.trim() ? "mb-2" : ""}>
+                            <AudioPlayer src={msg.media_url} isOutgoing={msg.sender_id === user!.id} />
+                          </div>
                         )}
                         {msg.media_type === 'document' && (
                           <a
@@ -772,7 +902,7 @@ export const Messages = () => {
                     </button>
                   )}
                 </div>
-              ))}
+              )})}
 
               {isOtherTyping && (
                 <div className="flex justify-start">
