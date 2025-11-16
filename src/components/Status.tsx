@@ -37,7 +37,8 @@ const useActiveStatuses = () => {
     try {
       let query = supabase
         .from('statuses')
-        .select('*, profiles!user_id(*)')
+        // FIX: Changed 'profiles!user_id(*)' to the correct PostgREST embedding: 'profiles(*)'
+        .select('*, profiles(*)') 
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(50);
@@ -79,6 +80,8 @@ const useActiveStatuses = () => {
 
     } catch (error) {
       console.error('Error fetching statuses:', error);
+      // Ensure loading state is false even on error
+      setLoading(false); 
     } finally {
       setLoading(false);
     }
@@ -493,7 +496,7 @@ const StatusViewer: React.FC<{ userId: string; onClose: () => void }> = ({ userI
   const markStatusAsViewed = useCallback(async (status: Status) => {
     if (!user || status.viewed_by?.includes(user.id)) return;
 
-    // Use a function to update the array to prevent race conditions
+    // Use a function to update the array to prevent race conditions (assuming you have a 'update_viewed_by' RPC)
     const { error } = await supabase.rpc('update_viewed_by', {
         status_id_in: status.id,
         user_id_in: user.id
@@ -501,6 +504,16 @@ const StatusViewer: React.FC<{ userId: string; onClose: () => void }> = ({ userI
 
     if (error) {
         console.error("Error marking status as viewed:", error);
+    }
+    
+    // Fallback direct update (less robust against concurrency but might be needed if RPC is missing)
+    if (!status.viewed_by?.includes(user.id)) {
+        const newViewedBy = [...(status.viewed_by || []), user.id];
+        await supabase
+            .from('statuses')
+            .update({ viewed_by: newViewedBy })
+            .eq('id', status.id)
+            .select();
     }
   }, [user]);
 
@@ -540,6 +553,7 @@ const StatusViewer: React.FC<{ userId: string; onClose: () => void }> = ({ userI
     const current = statuses[currentIndex];
     setLoading(true);
 
+    // CRITICAL: Mark as viewed BEFORE playback starts (or immediately on load)
     markStatusAsViewed(current);
 
     if (current.media_type === 'video') {
@@ -692,7 +706,8 @@ export const StatusArchive: React.FC = () => {
         // Query relies on RLS policy: "Users can read own archive" (auth.uid() = user_id)
         const { data, error } = await supabase
           .from('statuses')
-          .select('*, profiles!user_id(*)')
+          // FIX: Changed 'profiles!user_id(*)' to the correct PostgREST embedding: 'profiles(*)'
+          .select('*, profiles(*)') 
           .eq('user_id', user.id) // IMPORTANT: Filter by current user ID
           .order('created_at', { ascending: false });
         
@@ -824,10 +839,8 @@ export const Status: React.FC = () => {
     const handleOpenCreator = () => setShowCreator(true);
     const handleOpenViewer = (e: CustomEvent) => setViewerUserId(e.detail.userId);
     const handleStatusPosted = () => {
-        // Close creator, viewer might be open if viewing own status then posting new one
+        // Close creator
         setShowCreator(false);
-        // Do NOT explicitly set viewerUserId to null here unless you want to force close the viewer.
-        // The StatusViewer component's logic handles closing itself via goToNext().
     };
 
     window.addEventListener('openStatusCreator', handleOpenCreator);
