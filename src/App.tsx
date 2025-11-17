@@ -9,11 +9,12 @@ import { Search } from './components/Search';
 import { Settings } from './components/Settings';
 import { CustomPage } from './components/CustomPage';
 import { Stats } from './components/Stats';
-import { Home, MessageSquare, User, LogOut, Search as SearchIcon } from 'lucide-react';
+import { StatusSidebar, StatusArchive, Status } from './components/Status';
+import { Notifications } from './components/Notifications'; 
+import { Home, MessageSquare, User, LogOut, Search as SearchIcon, Bell } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { Analytics } from '@vercel/analytics/react';
-import { StatusSidebar, StatusArchive, Status } from './components/Status';
 
 type ViewType = 'feed' | 'messages' | 'profile' | 'settings' | 'page' | 'stats'; 
 
@@ -29,12 +30,105 @@ const Main = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // === NEW: Notification State ===
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false); // For a future modal
+
   // Set theme from profile
   useEffect(() => {
     if (profile?.theme) {
       document.body.className = `theme-${profile.theme}`;
     }
   }, [profile?.theme]);
+
+  // === NEW: Notification Fetching and Realtime ===
+  useEffect(() => {
+    if (!user) return;
+
+    // 1. Initial fetch for counts
+    const fetchCounts = async () => {
+      // Fetch unread messages
+      const { count: msgCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('recipient_id', user.id)
+        .eq('read', false);
+      setUnreadMessages(msgCount || 0);
+
+      // Fetch unread notifications (assumes 'notifications' table exists)
+      try {
+        const { count: notifCount } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('recipient_id', user.id)
+          .eq('is_read', false);
+        setUnreadNotifications(notifCount || 0);
+      } catch (error) {
+        console.warn("Could not fetch notifications. Did you create the 'notifications' table?");
+      }
+    };
+
+    fetchCounts();
+
+    // 2. Real-time subscriptions
+    const channel = supabase.channel(`user-notifications:${user.id}`);
+    
+    // Listen for new messages
+    channel.on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages',
+      filter: `recipient_id=eq.${user.id}`
+    }, (payload) => {
+      // Check if read status is false (though it should be by default)
+      if (payload.new.read === false) {
+        setUnreadMessages(c => c + 1);
+      }
+    });
+
+    // Listen for messages being marked as read (e.g., in Messages.tsx)
+    channel.on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'messages',
+      filter: `recipient_id=eq.${user.id}`
+    }, (payload) => {
+      if (payload.old.read === false && payload.new.read === true) {
+        setUnreadMessages(c => Math.max(0, c - 1));
+      }
+    });
+
+    // Listen for new notifications
+    channel.on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'notifications',
+      filter: `recipient_id=eq.${user.id}`
+    }, (payload) => {
+      setUnreadNotifications(n => n + 1);
+    });
+
+    // Listen for notifications being marked as read
+    channel.on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'notifications',
+      filter: `recipient_id=eq.${user.id}`
+    }, (payload) => {
+      // This handles batch updates (e.g., "mark all as read")
+      if (payload.old.is_read === false && payload.new.is_read === true) {
+        setUnreadNotifications(n => Math.max(0, n - 1));
+      }
+    });
+    
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+
+  }, [user]);
 
   // === URL PROFILE LOOKUP (via ?username) ===
   useEffect(() => {
@@ -285,9 +379,17 @@ if (loading) {
         <div className="min-h-screen bg-[rgb(var(--color-background))]">
           <div className="bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] sticky top-0 z-50 shadow-sm">
             <div className="max-w-6xl mx-auto flex items-center justify-between px-4 h-14">
-              <h1 className="text-l font-black bg-gradient-to-r from-[rgba(var(--color-primary),1)] via-[rgba(var(--color-accent),1)] to-[rgba(var(--color-primary),1)] bg-clip-text text-transparent">
-                Liaoverse
-              </h1>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox={SVG_VIEWBOX}
+                className="h-6 w-auto cursor-pointer"
+                onClick={() => navigate('/')}
+              >
+                <path
+                  d={SVG_PATH}
+                  fill="rgb(var(--color-primary))"
+                />
+              </svg>
               <a href="/" className="text-[rgb(var(--color-primary))] hover:text-[rgba(var(--color-primary),0.8)] font-bold">
                 ← Back to Home
               </a>
@@ -317,21 +419,51 @@ if (loading) {
     setView('settings');
     setSelectedProfileId(undefined);
   };
+  
+  // === NEW: Handle clicking the notification bell ===
+  const handleNotificationsClick = async () => {
+    // 1. Show the notification modal/page (component not built yet)
+    setShowNotifications(true); 
+    // Or: setView('notifications');
+    
+    // 2. Mark all as read in the DB
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', user.id)
+        .eq('is_read', false);
+    
+      // 3. Optimistically update the UI
+      setUnreadNotifications(0);
+    } catch (error) {
+       console.warn("Could not mark notifications as read.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[rgb(var(--color-background))]">
       <nav className="bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 h-14">
-          <h1 className="text-l font-black bg-gradient-to-r from-[rgba(var(--color-primary),1)] via-[rgba(var(--color-accent),1)] to-[rgba(var(--color-primary),1)] bg-clip-text text-transparent">
-            Liaoverse
-          </h1>
-          <div className="flex items-center gap-2">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox={SVG_VIEWBOX}
+            className="h-6 w-auto cursor-pointer"
+            onClick={() => { setView('feed'); setSelectedProfileId(undefined); navigate('/'); }}
+          >
+            <path
+              d={SVG_PATH}
+              fill="rgb(var(--color-primary))"
+            />
+          </svg>
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setShowSearch(true)}
               className="p-3 rounded-full hover:bg-[rgb(var(--color-surface-hover))] transition"
             >
-              <SearchIcon size={24} className="text-[rgb(var(--color-text-secondary))]" />
+              <SearchIcon size={20} className="text-[rgb(var(--color-text-secondary))]" />
             </button>
+            
             <button
               onClick={() => {
                 setView('feed');
@@ -339,23 +471,39 @@ if (loading) {
                 navigate('/');
               }}
               className={`p-3 rounded-full transition ${
-                view === 'feed' ? 'bg-[rgba(var(--color-primary),0.1)] text-[rgb(var(--color-primary))]' : 'hover:bg-[rgb(var(--color-surface-hover))]'
+                view === 'feed' ? 'bg-[rgba(var(--color-primary),0.1)] text-[rgb(var(--color-primary))]' : 'hover:bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text-secondary))]'
               }`}
             >
-              <Home size={24} />
+              <Home size={20} />
             </button>
+            
+            {/* === UPDATED: Messages Icon === */}
             <button
               onClick={() => {
                 setView('messages');
                 setSelectedProfileId(undefined);
                 navigate('/message'); // Navigate to /message base
               }}
-              className={`p-3 rounded-full transition ${
-                view === 'messages' ? 'bg-[rgba(var(--color-primary),0.1)] text-[rgb(var(--color-primary))]' : 'hover:bg-[rgb(var(--color-surface-hover))]'
+              className={`relative p-3 rounded-full transition ${ // Added relative
+                view === 'messages' ? 'bg-[rgba(var(--color-primary),0.1)] text-[rgb(var(--color-primary))]' : 'hover:bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text-secondary))]'
               }`}
             >
-              <MessageSquare size={24} />
+              <MessageSquare size={20} />
+              {unreadMessages > 0 && ( // Added dot
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
+              )}
             </button>
+
+			<button
+              onClick={handleNotificationsClick}
+              className="relative p-3 rounded-full hover:bg-[rgb(var(--color-surface-hover))] transition"
+            >
+              <Bell size={20} className="text-[rgb(var(--color-text-secondary))]" />
+              {unreadNotifications > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              )}
+            </button>
+            
             <button
               onClick={() => {
                 if (!profile?.username) return;
@@ -366,16 +514,16 @@ if (loading) {
               className={`p-3 rounded-full transition ${
                 view === 'profile' && !selectedProfileId
                   ? 'bg-[rgba(var(--color-primary),0.1)] text-[rgb(var(--color-primary))]'
-                  : 'hover:bg-[rgb(var(--color-surface-hover))]'
+                  : 'hover:bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text-secondary))]'
               }`}
             >
-              <User size={24} />
+              <User size={20} />
             </button>
             <button
               onClick={signOut}
               className="p-3 rounded-full hover:bg-[rgba(239,68,68,0.1)] text-red-600 transition"
             >
-              <LogOut size={24} />
+              <LogOut size={20} />
             </button>
           </div>
         </div>
@@ -394,6 +542,9 @@ if (loading) {
           />
         )}
         {view === 'settings' && <Settings />}
+        
+        {showNotifications && <Notifications onClose={() => setShowNotifications(false)} />}
+        
         {showSearch && <Search onClose={() => setShowSearch(false)} />}
         {view === 'stats' && user && <Stats />}
       </main>
