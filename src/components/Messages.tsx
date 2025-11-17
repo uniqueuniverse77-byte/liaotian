@@ -486,53 +486,112 @@ export const Messages = () => {
   };
 
   const loadMessages = async (recipientId: string) => {
-    setMessages([]); 
-    setMessagePage(0); 
-    setHasMoreMessages(true); 
-    setIsLoadingMore(false); 
-    
-    const { data, count } = await supabase
+    setMessages([]);
+    setMessagePage(0);
+    setHasMoreMessages(true);
+    setIsLoadingMore(false);
+
+    // 1. Fetch the batch of messages *without* the failing magic join
+    const { data: messagesData, count } = await supabase
       .from('messages')
-      .select('id, sender_id, recipient_id, content, created_at, media_url, media_type, read, reply_to_id, reply_to:messages!reply_to_id(id, content, sender_id, media_type)', { count: 'exact' })
+      .select('id, sender_id, recipient_id, content, created_at, media_url, media_type, read, reply_to_id', { count: 'exact' }) // Removed the `reply_to:` join
       .or(
         `and(sender_id.eq.${user!.id},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${user!.id})`
       )
       .order('created_at', { ascending: false })
-      .range(0, MESSAGE_PAGE_SIZE - 1); 
-      
-    setMessages(data ? (data as AppMessage[]).reverse() : []); 
-    
-    if (!data || data.length < MESSAGE_PAGE_SIZE || (count !== null && count <= MESSAGE_PAGE_SIZE)) {
+      .range(0, MESSAGE_PAGE_SIZE - 1);
+
+    if (!messagesData || messagesData.length === 0) {
       setHasMoreMessages(false);
+      return;
     }
     
+    // 2. Collect all unique reply_to_id's from this batch
+    const replyIds = messagesData
+      .map(m => m.reply_to_id)
+      .filter((id): id is string => id !== null && id !== undefined);
+
+    let repliesMap = new Map<string, AppMessage['reply_to']>();
+
+    // 3. If there are replies, fetch them all in ONE query
+    if (replyIds.length > 0) {
+      const { data: repliesData } = await supabase
+        .from('messages')
+        .select('id, content, sender_id, media_type')
+        .in('id', replyIds);
+
+      if (repliesData) {
+        repliesData.forEach(r => repliesMap.set(r.id, r));
+      }
+    }
+
+    // 4. Combine the messages with their fetched reply data
+    const finalMessages = messagesData.map(msg => ({
+      ...msg,
+      reply_to: msg.reply_to_id ? repliesMap.get(msg.reply_to_id) || null : null,
+    }));
+    
+    setMessages(finalMessages.reverse() as AppMessage[]);
+
+    if (messagesData.length < MESSAGE_PAGE_SIZE || (count !== null && count <= MESSAGE_PAGE_SIZE)) {
+      setHasMoreMessages(false);
+    }
+
     setTimeout(scrollToBottom, 100);
   };
 
   const loadMoreMessages = async () => {
     if (isLoadingMore || !hasMoreMessages || !selectedUser) return;
-  
+
     setIsLoadingMore(true);
     const nextPage = messagePage + 1;
     const from = nextPage * MESSAGE_PAGE_SIZE;
     const to = from + MESSAGE_PAGE_SIZE - 1;
-  
+
     const container = messagesContainerRef.current;
     const oldScrollHeight = container?.scrollHeight;
-    
-    const { data, count } = await supabase
+
+    // 1. Fetch the next batch of messages *without* the magic join
+    const { data: messagesData, count } = await supabase
       .from('messages')
-      .select('id, sender_id, recipient_id, content, created_at, media_url, media_type, read, reply_to_id, reply_to:messages!reply_to_id(id, content, sender_id, media_type)', { count: 'exact' })
+      .select('id, sender_id, recipient_id, content, created_at, media_url, media_type, read, reply_to_id', { count: 'exact' }) // Removed the `reply_to:` join
       .or(
         `and(sender_id.eq.${user!.id},recipient_id.eq.${selectedUser.id}),and(sender_id.eq.${selectedUser.id},recipient_id.eq.${user!.id})`
       )
       .order('created_at', { ascending: false })
       .range(from, to);
-  
-    if (data && data.length > 0) {
-      setMessages(prev => [...(data as AppMessage[]).reverse(), ...prev]);
-      setMessagePage(nextPage);
       
+    // 2. Collect all unique reply_to_id's from this batch
+    if (messagesData && messagesData.length > 0) {
+      const replyIds = messagesData
+        .map(m => m.reply_to_id)
+        .filter((id): id is string => id !== null && id !== undefined);
+
+      let repliesMap = new Map<string, AppMessage['reply_to']>();
+
+      // 3. If there are replies, fetch them all in ONE query
+      if (replyIds.length > 0) {
+        const { data: repliesData } = await supabase
+          .from('messages')
+          .select('id, content, sender_id, media_type')
+          .in('id', replyIds);
+
+        if (repliesData) {
+          repliesData.forEach(r => repliesMap.set(r.id, r));
+        }
+      }
+
+      // 4. Combine the messages with their fetched reply data
+      const finalMessages = messagesData.map(msg => ({
+        ...msg,
+        reply_to: msg.reply_to_id ? repliesMap.get(msg.reply_to_id) || null : null,
+      }));
+
+      // 5. Prepend the new (old) messages to the state
+      setMessages(prev => [...(finalMessages as AppMessage[]).reverse(), ...prev]);
+      setMessagePage(nextPage);
+
+      // 6. Restore scroll position
       if (container && oldScrollHeight) {
         setTimeout(() => {
           const newScrollHeight = container.scrollHeight;
@@ -540,11 +599,11 @@ export const Messages = () => {
         }, 0);
       }
     }
-  
-    if (!data || data.length < MESSAGE_PAGE_SIZE || (count !== null && messages.length + (data?.length || 0) >= count)) {
+
+    if (!messagesData || messagesData.length < MESSAGE_PAGE_SIZE || (count !== null && messages.length + (messagesData?.length || 0) >= count)) {
       setHasMoreMessages(false);
     }
-  
+
     setIsLoadingMore(false);
   };
   
