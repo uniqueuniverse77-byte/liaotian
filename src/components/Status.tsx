@@ -217,7 +217,7 @@ export const StatusTray: React.FC = () => {
             </div>
             <span className="text-xs text-center text-[rgb(var(--color-text-secondary))] truncate w-16 flex items-center justify-center gap-1">
               <span className="truncate">{statusUser.display_name || statusUser.username}</span>
-              {statusUser.verified && <BadgeCheck size={12} className="text-blue-500 flex-shrink-0" />}
+              {statusUser.verified && <BadgeCheck size={12} className="text-[rgb(var(--color-accent))] flex-shrink-0" />}
             </span>
           </div>
         ))}
