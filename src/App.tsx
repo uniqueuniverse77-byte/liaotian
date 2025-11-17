@@ -307,7 +307,7 @@ const Main = () => {
         .single()
         .then(({ data }) => {
           if (data) {
-            navigate(`/?${data.username}`);
+            navigate(`/?user=${data.username}`);
             setSelectedProfileId(profileId);
             setView('profile');
           }
@@ -405,7 +405,7 @@ if (loading) {
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox={SVG_VIEWBOX}
-                className="w-[22px] h-[22px] cursor-pointer"
+                className="w-[26px] h-[26px] cursor-pointer"
                 onClick={() => navigate('/')}
               >
                 <path
@@ -530,7 +530,7 @@ if (loading) {
             <button
               onClick={() => {
                 if (!profile?.username) return;
-                navigate(`/?${profile.username}`);
+                navigate(`/?user=${profile.username}`);
                 setSelectedProfileId(undefined);
                 setView('profile');
               }}
