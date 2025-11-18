@@ -35,6 +35,32 @@ const Main = () => {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false); // For a future modal
 
+	// Auto-join via /invite/:code
+	useEffect(() => {
+	  const match = location.pathname.match(/^\/invite\/([a-zA-Z0-9]{8})$/);
+	  if (match && user) {
+	    const code = match[1];
+	    (async () => {
+	      const { data: gazebo } = await supabase
+	        .from('gazebos')
+	        .select('*')
+	        .eq('invite_code', code)
+	        .single();
+	
+	      if (gazebo) {
+	        await supabase.from('gazebo_members').upsert({
+	          gazebo_id: gazebo.id,
+	          user_id: user.id,
+	          role: 'member'
+	        });
+	        navigate('/messages'); // or a dedicated /gazebo route
+	        // You may want to set activeGazebo via context/event
+	        window.location.reload(); // simple way to refresh list
+	      }
+	    })();
+	  }
+	}, [location, user]);
+
   // Set theme from profile
   useEffect(() => {
     if (profile?.theme) {
@@ -463,35 +489,6 @@ if (loading) {
        console.warn("Could not mark notifications as read.");
     }
   };
-
-const location = useLocation();
-const navigate = useNavigate();
-
-// Auto-join via /invite/:code
-useEffect(() => {
-  const match = location.pathname.match(/^\/invite\/([a-zA-Z0-9]{8})$/);
-  if (match && user) {
-    const code = match[1];
-    (async () => {
-      const { data: gazebo } = await supabase
-        .from('gazebos')
-        .select('*')
-        .eq('invite_code', code)
-        .single();
-
-      if (gazebo) {
-        await supabase.from('gazebo_members').upsert({
-          gazebo_id: gazebo.id,
-          user_id: user.id,
-          role: 'member'
-        });
-        navigate('/messages'); // or a dedicated /gazebo route
-        // You may want to set activeGazebo via context/event
-        window.location.reload(); // simple way to refresh list
-      }
-    })();
-  }
-}, [location, user]);
 
   return (
     <div className="min-h-screen bg-[rgb(var(--color-background))]">
