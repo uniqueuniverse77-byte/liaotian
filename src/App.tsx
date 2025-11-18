@@ -9,7 +9,7 @@ import { Search } from './components/Search';
 import { Settings } from './components/Settings';
 import { CustomPage } from './components/CustomPage';
 import { Stats } from './components/Stats';
-import { StatusSidebar, StatusArchive, Status } from './components/Status';
+import { Status } from './components/Status';
 import { Notifications } from './components/Notifications'; 
 import { Home, MessageSquare, User, LogOut, Search as SearchIcon, Bell } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -26,7 +26,10 @@ const Main = () => {
   const [pageSlug, setPageSlug] = useState<string>('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>();
   const [showSearch, setShowSearch] = useState(false);
+  
+  // --- STATE FIX: Added pendingGazeboId ---
   const [pendingGazeboInvite, setPendingGazeboInvite] = useState<string | null>(null);
+  const [pendingGazeboId, setPendingGazeboId] = useState<string | null>(null);
   const [initialTab, setInitialTab] = useState<'chats' | 'gazebos'>('chats');
   
   const { user, profile, loading, signOut } = useAuth();
@@ -37,6 +40,17 @@ const Main = () => {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // === Auto-join via /invite/:code ===
+  useEffect(() => {
+    const match = location.pathname.match(/^\/invite\/([a-zA-Z0-9-]{3,20})$/); 
+    if (match && user) {
+      const code = match[1];
+      setPendingGazeboInvite(code);
+      setView('messages');
+      navigate('/message'); 
+    }
+  }, [location.pathname, user, navigate]);
 
   // === NEW: Handle /gazebo route ===
   useEffect(() => {
@@ -118,7 +132,7 @@ const Main = () => {
       schema: 'public',
       table: 'notifications',
       filter: `recipient_id=eq.${user.id}`
-    }, (payload) => {
+    }, () => {
       setUnreadNotifications(n => n + 1);
     });
 
@@ -188,7 +202,7 @@ const Main = () => {
     const search = location.search;
     
     // Prevent redirect looping on invite links
-    if (path.startsWith('/invite/')) return;
+    if (path.startsWith('/invite/') || path.startsWith('/gazebo')) return;
 
     if (path === '/' || path === '/user') {
         const usernameQuery = search.startsWith('?') ? search.slice(1) : search;
@@ -413,13 +427,13 @@ const Main = () => {
       <main className="h-[90vh] overflow-auto">
         {view === 'feed' && <Feed />}
         {view === 'messages' && (
-            <Messages 
-                initialInviteCode={pendingGazeboInvite} 
-                onInviteHandled={() => setPendingGazeboInvite(null)}
-                initialTab={initialTab}
-                initialGazeboId={pendingGazeboId}
-            />
-        )}
+		    <Messages 
+		        initialInviteCode={pendingGazeboInvite} 
+		        onInviteHandled={() => setPendingGazeboInvite(null)} 
+		        initialTab={initialTab}
+		        initialGazeboId={pendingGazeboId}
+		    />
+		)}
         {view === 'profile' && (
           <Profile userId={selectedProfileId} onMessage={handleMessageUser} onSettings={!selectedProfileId || selectedProfileId === user.id ? handleSettings : undefined} />
         )}
