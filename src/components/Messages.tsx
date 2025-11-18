@@ -137,8 +137,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ src, isOutgoing }) => {
 // --- END AudioPlayer COMPONENT ---
 
 
-export const Messages = () => {
-  const [activeTab, setActiveTab] = useState<'chats' | 'gazebos'>('chats');
+export const Messages = ({ 
+  initialInviteCode, 
+  onInviteHandled, 
+  initialTab = 'chats',
+  initialGazeboId 
+}: { 
+  initialInviteCode?: string | null, 
+  onInviteHandled?: () => void,
+  initialTab?: 'chats' | 'gazebos',
+  initialGazeboId?: string | null
+}) => {
+  const [activeTab, setActiveTab] = useState<'chats' | 'gazebos'>(initialTab);
   const [conversations, setConversations] = useState<Profile[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<AppMessage[]>([]);
@@ -272,6 +282,11 @@ export const Messages = () => {
 
     setConversations(sorted);
   };
+
+  // Update tab if prop changes (e.g. via navigation)
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     const handleOpenDM = (e: any) => {
@@ -743,23 +758,23 @@ export const Messages = () => {
       <div className="flex h-full bg-[rgb(var(--color-background))] flex-col md:flex-row text-[rgb(var(--color-text))]">
         <Calls />
         
-        {/* Mobile Tab Switcher */}
-        <div className="md:hidden p-2 bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] flex gap-2">
+        {/* Mobile Tab Switcher - Fixed Position for Visibility */}
+        <div className="md:hidden flex-shrink-0 p-2 bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] flex gap-2 z-50">
           <button 
             onClick={() => setActiveTab('chats')} 
-            className="flex-1 p-2 rounded bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text))]"
+            className="flex-1 p-2 rounded font-bold text-sm bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text-secondary))]"
           >
             Chats
           </button>
           <button 
-            className="flex-1 p-2 rounded bg-[rgb(var(--color-primary))] text-[rgb(var(--color-text-on-primary))]"
+            className="flex-1 p-2 rounded font-bold text-sm bg-[rgb(var(--color-primary))] text-[rgb(var(--color-text-on-primary))]"
           >
             Gazebos
           </button>
         </div>
         
-        {/* Desktop Sidebar Stub (Navigation Rail) */}
-        <div className="hidden md:flex flex-col w-16 bg-[rgb(var(--color-surface))] border-r border-[rgb(var(--color-border))] items-center py-4 gap-4 z-50">
+        {/* Desktop Sidebar Stub */}
+        <div className="hidden md:flex flex-col w-16 bg-[rgb(var(--color-surface))] border-r border-[rgb(var(--color-border))] items-center py-4 gap-4 z-50 flex-shrink-0">
           <button 
             onClick={() => setActiveTab('chats')} 
             title="Direct Messages" 
@@ -776,8 +791,12 @@ export const Messages = () => {
         </div>
 
         {/* Main Gazebo Content */}
-        <div className="flex-1 min-w-0 h-full relative">
-             <Gazebos />
+        <div className="flex-1 min-w-0 h-full relative overflow-hidden">
+             <Gazebos 
+                initialInviteCode={initialInviteCode} 
+                onInviteHandled={onInviteHandled}
+                initialGazeboId={initialGazeboId}
+             />
         </div>
       </div>
     );
