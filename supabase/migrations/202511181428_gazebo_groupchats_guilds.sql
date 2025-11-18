@@ -58,3 +58,22 @@ CREATE POLICY "Public access for now" ON public.gazebos FOR ALL USING (auth.role
 CREATE POLICY "Public access for now" ON public.gazebo_members FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Public access for now" ON public.gazebo_channels FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Public access for now" ON public.gazebo_messages FOR ALL USING (auth.role() = 'authenticated');
+
+
+
+
+-- Add invite system
+ALTER TABLE public.gazebos 
+ADD COLUMN IF NOT EXISTS invite_code text UNIQUE,
+ADD COLUMN IF NOT EXISTS invite_expires_at timestamp with time zone,
+ADD COLUMN IF NOT EXISTS invite_uses_max integer DEFAULT 0,
+ADD COLUMN IF NOT EXISTS invite_uses_current integer DEFAULT 0;
+
+-- Role colors & display
+ALTER TABLE public.gazebo_members
+ADD COLUMN IF NOT EXISTS role_color text DEFAULT '#94a3b8',
+ADD COLUMN IF NOT EXISTS role_name text DEFAULT 'Member';
+
+-- Optional: channel topics/descriptions
+ALTER TABLE public.gazebo_channels
+ADD COLUMN IF NOT EXISTS topic text DEFAULT '';
