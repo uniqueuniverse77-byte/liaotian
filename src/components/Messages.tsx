@@ -365,6 +365,22 @@ export const Messages = ({
     if (user) loadConversations();
   }, [user]);
 
+  // NEW: Listen for URL query params to open chat directly
+  useEffect(() => {
+      const params = new URLSearchParams(window.location.search);
+      const username = params.get('user');
+      if (username && user) {
+          const fetchUser = async () => {
+              const { data } = await supabase.from('profiles').select('*').eq('username', username).single();
+              if (data && data.id !== user.id) {
+                  setSelectedUser(data);
+                  setShowSidebar(false);
+              }
+          };
+          fetchUser();
+      }
+  }, [user]); // Runs on mount or when user loads
+
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   useEffect(() => {
     if (!searchQuery.trim()) {
