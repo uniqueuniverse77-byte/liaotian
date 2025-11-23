@@ -1156,44 +1156,37 @@ export const Gazebos = ({ initialInviteCode, onInviteHandled, initialGazeboId }:
       </div>
 
       {/* === 4. MEMBER LIST === */}
-      {showMembersPanel && !isMobile && (
-          <div className="w-60 bg-[rgb(var(--color-surface))] border-l border-[rgb(var(--color-border))] flex flex-col p-4 overflow-y-auto">
-              {['owner', 'admin', 'member'].map(role => {
-                  const roleMembers = members.filter(m => m.role === role);
-                  if (roleMembers.length === 0) return null;
-                  return (
-                      <div key={role} className="mb-6">
-                          <h3 className="text-xs font-bold text-[rgb(var(--color-text-secondary))] uppercase mb-2">{role === 'owner' ? 'Owner' : role === 'admin' ? 'Admins' : 'Members'} — {roleMembers.length}</h3>
-                          {roleMembers.map(m => (
-                              <div 
-                                key={m.user_id} 
-                                className="group flex items-center gap-2 p-2 rounded hover:bg-[rgb(var(--color-surface-hover))] cursor-pointer opacity-90 hover:opacity-100 relative"
-                              >
-                                  <div className="relative" onClick={() => setViewingProfile(m.profiles)}>
-                                      <img src={m.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.profiles.username}`} className="w-8 h-8 rounded-full object-cover" />
-                                      {/* NEW: Member List Online Dot */}
-                                      {isUserOnline(m.profiles.last_seen) && (
-                                          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-[rgb(var(--color-surface))] rounded-full"></div>
-                                      )}
-                                  </div>
-                                  <span className={`font-medium truncate flex-1`} style={{ color: role === 'owner' ? '#eab308' : role === 'admin' ? '#3b82f6' : 'inherit' }} onClick={() => setViewingProfile(m.profiles)}>{m.profiles.display_name}</span>
-                                  {role === 'owner' && <Crown size={14} className="text-yellow-500" />}
-                                  {role === 'admin' && <Shield size={14} className="text-blue-500" />}
-                                  
-                                  {isAdmin && m.user_id !== user?.id && m.role !== 'owner' && (
-                                      <div className="absolute right-2 hidden group-hover:flex bg-[rgb(var(--color-surface))] border border-[rgb(var(--color-border))] rounded shadow-lg z-20">
-                                          <button title="Kick" onClick={() => kickMember(m.user_id)} className="p-1 hover:text-red-500"><UserMinus size={14}/></button>
-                                          {isOwner && (
-                                              <button title="Toggle Admin" onClick={() => updateMemberRole(m.user_id, m.role === 'admin' ? 'member' : 'admin')} className="p-1 hover:text-blue-500"><ShieldAlert size={14}/></button>
-                                          )}
-                                      </div>
-                                  )}
-                              </div>
-                          ))}
-                      </div>
-                  )
-              })}
-          </div>
+      {showMembersPanel && (
+        <>
+            {/* Desktop Sidebar (Hidden on Mobile) */}
+            <div className="hidden md:flex w-60 bg-[rgb(var(--color-surface))] border-l border-[rgb(var(--color-border))] flex-col p-4 overflow-y-auto">
+                {renderMembersList()}
+            </div>
+            
+            {/* Mobile Modal (Hidden on Desktop) */}
+            <div 
+                className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex justify-end transition-opacity" 
+                onClick={() => setShowMembersPanel(false)}
+            >
+                <div 
+                    className="w-72 h-full bg-[rgb(var(--color-surface))] shadow-2xl border-l border-[rgb(var(--color-border))] flex flex-col transform transition-transform duration-300 ease-in-out" 
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="p-4 border-b border-[rgb(var(--color-border))] flex justify-between items-center bg-[rgb(var(--color-surface))]">
+                        <h3 className="font-bold text-lg">Members</h3>
+                        <button 
+                            onClick={() => setShowMembersPanel(false)}
+                            className="p-1 rounded-full hover:bg-[rgb(var(--color-surface-hover))]"
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
+                    <div className="p-4 overflow-y-auto flex-1 custom-scrollbar bg-[rgb(var(--color-background))]">
+                        {renderMembersList()}
+                    </div>
+                </div>
+            </div>
+        </>
       )}
 
       {/* === MODALS === */}
