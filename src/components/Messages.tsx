@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
 import { supabase, Message, Profile, uploadMedia, MessageReaction } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link, CornerUpLeft, Phone, Video, Mic, Play, Pause, Check, CheckCheck, MessageSquare, Users, Smile, Image as ImageIcon, Film, Music, Folder, FileIcon, MoreVertical, ChevronDown } from 'lucide-react';
+import { Send, BadgeCheck, Search, ArrowLeft, X, Paperclip, FileText, Link, CornerUpLeft, Phone, Video, Mic, Play, Pause, Plus, Check, CheckCheck, MessageSquare, Users, Smile, Image as ImageIcon, Film, Music, Folder, FileIcon, MoreVertical, ChevronDown } from 'lucide-react';
 import { MessageEmbed } from './MessageEmbed';
 import { EmojiPicker } from './EmojiPicker';
 
@@ -1657,8 +1657,11 @@ export const Messages = ({
                                     <div className="text-xs font-bold text-[rgb(var(--color-accent))] mb-0.5 truncate"> {/* Added truncate to name too */}
                                         Replying to {replyingTo.sender_id === user!.id ? 'yourself' : selectedUser?.display_name}
                                     </div>
-                                    <p className="text-xs text-[rgb(var(--color-text-secondary))] truncate block">
-                                        {replyingTo.content || <span className="italic">[{replyingTo.media_type || 'Media'}]</span>}
+                                    <p className="text-xs text-[rgb(var(--color-text-secondary))] block whitespace-nowrap overflow-hidden">
+                                        {replyingTo.content 
+                                            ? (replyingTo.content.length > 20 ? replyingTo.content.substring(0, 20) + '...' : replyingTo.content)
+                                            : <span className="italic">[{replyingTo.media_type || 'Media'}]</span>
+                                        }
                                     </p>
                                 </div>
                                 <button onClick={() => setReplyingTo(null)} className="p-1 rounded-full hover:bg-black/10 text-[rgb(var(--color-text-secondary))]">
