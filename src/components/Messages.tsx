@@ -1638,8 +1638,11 @@ export const Messages = ({
                              <div className={`text-[10px] font-bold ${isMe ? 'text-white/90' : 'text-[rgb(var(--color-accent))]'}`}>
                                 {isReplyToSelf ? 'You' : selectedUser?.display_name}
                              </div>
-                             <div className={`text-[10px] break-all whitespace-pre-wrap leading-tight ${isMe ? 'text-white/70' : 'text-[rgb(var(--color-text-secondary))]'}`}>
-                              {repliedToMsg.content || `[${repliedToMsg.media_type || 'Message'}]`}
+                            <div className={`text-[10px] truncate ${isMe ? 'text-white/70' : 'text-[rgb(var(--color-text-secondary))]'}`}>
+                              {repliedToMsg.content 
+                                            ? (repliedToMsg.content.length > 20 ? repliedToMsg.content.substring(0, 20) + '...' : repliedToMsg.content)
+                                            : <span className="italic">[{repliedToMsg.media_type || '...'}]</span>
+                              }
                             </div>
                           </div>
                         </div>
