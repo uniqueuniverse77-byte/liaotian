@@ -234,21 +234,27 @@ export const Messages = ({
 
   const handleDeleteMessage = async (messageId: string) => {
     setReactionMenu(null);
-    // Securely update DB: set flag
+    
+    // 1. Optimistic Update (Immediate UI feedback)
+    setMessages(prev => prev.map(m => m.id === messageId ? { 
+        ...m, 
+        is_deleted: true
+    } : m));
+
+    // 2. Database Update
     const { error } = await supabase
       .from('messages')
       .update({ 
-        is_deleted: true,
+        is_deleted: true
       })
       .eq('id', messageId)
-      .eq('sender_id', user!.id); // Extra security check
-    
-    // Optimistic UI update (Realtime subscription will also catch this)
-    if (!error) {
-      setMessages(prev => prev.map(m => m.id === messageId ? { 
-        ...m, 
-        is_deleted: true, 
-      } : m));
+      // We rely on RLS policy (auth.uid() = sender_id) for security now
+      .select(); 
+
+    if (error) {
+        console.error("Error deleting message:", error);
+        // Optional: Revert UI if failed
+        loadMessages(selectedUser!.id);
     }
   };
 
@@ -263,6 +269,19 @@ export const Messages = ({
     e.preventDefault();
     if (!editingMessage || !content.trim()) return;
 
+    const previousMessages = [...messages];
+    
+    // 1. Optimistic Update
+    setMessages(prev => prev.map(m => m.id === editingMessage.id ? { 
+        ...m, 
+        content: content, 
+        is_edited: true 
+    } : m));
+    
+    setEditingMessage(null);
+    setContent('');
+
+    // 2. Database Update
     const { error } = await supabase
       .from('messages')
       .update({ 
@@ -270,18 +289,12 @@ export const Messages = ({
         is_edited: true 
       })
       .eq('id', editingMessage.id)
-      .eq('sender_id', user!.id); // Extra security check
+      .select();
 
-    if (!error) {
-      // Update local state immediately
-      setMessages(prev => prev.map(m => m.id === editingMessage.id ? { 
-        ...m, 
-        content: content, 
-        is_edited: true 
-      } : m));
-      
-      setEditingMessage(null);
-      setContent('');
+    if (error) {
+      console.error("Error updating message:", error);
+      setMessages(previousMessages); // Revert on error
+      alert("Failed to update message");
     }
   };
 
