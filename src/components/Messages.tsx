@@ -248,7 +248,7 @@ export const Messages = ({
         is_deleted: true
       })
       .eq('id', messageId)
-      // We rely on RLS policy (auth.uid() = sender_id) for security now
+      .eq('sender_id', user!.id)
       .select(); 
 
     if (error) {
@@ -289,6 +289,7 @@ export const Messages = ({
         is_edited: true 
       })
       .eq('id', editingMessage.id)
+      .eq('sender_id', user!.id)
       .select();
 
     if (error) {
@@ -349,9 +350,8 @@ export const Messages = ({
         media_type: 'image', // Treat GIFs as images
       })
       .select().single();
-      
+
       if(data) {
-          setMessages(prev => [...prev, data as AppMessage]);
           scrollToBottom();
       }
   };

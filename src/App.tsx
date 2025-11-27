@@ -10,11 +10,11 @@ import { Settings } from './components/Settings';
 import { CustomPage } from './components/CustomPage';
 import { Stats } from './components/Stats';
 import { Status, StatusArchive } from './components/Status';
-import { Sidebar } from './components/Sidebar';
+import { LeftSidebar, RightSidebar } from './components/Sidebar';
 import { Notifications } from './components/Notifications'; 
 import { Groups } from './components/Groups';
 import { Forums } from './components/Forums';
-import { Home, MessageSquare, User, LogOut, Search as SearchIcon, Bell } from 'lucide-react';
+import { Home, MessageSquare, User, LogOut, Search as SearchIcon, Bell, Menu } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { Analytics } from '@vercel/analytics/react';
@@ -32,6 +32,7 @@ const EVENT_THEMES = ["https://mux8.com/assets/audio/theme01.mp3", "https://mux8
 const Main = () => {
   const [view, setView] = useState<ViewType>('feed');
   const [showSidebar, setShowSidebar] = useState(false);
+	const [showLeftSidebar, setShowLeftSidebar] = useState(false);
   const [pageSlug, setPageSlug] = useState<string>('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>();
   const [showSearch, setShowSearch] = useState(false);
@@ -184,12 +185,29 @@ const Main = () => {
         return;
       }
       
-      // 8. Priority: Custom Page Slugs
-      const slugMatch = path.match(/^\/([a-zA-Z0-9-]+)$/);
+      // 8. Priority: Custom Page Slugs / Username Paths (More permissive regex)
+      const slugMatch = path.match(/^\/([^/]+)\/?$/); // Matches anything that isn't a slash
       if (slugMatch) {
-         const slug = slugMatch[1];
-         // Ignore reserved words just in case
-         if (!['user', 'invite', 'gazebo', 'message', 'stats'].includes(slug)) {
+         const rawSlug = slugMatch[1];
+         const slug = decodeURIComponent(rawSlug); // Handle spaces (%20) and special chars
+
+         // Ignore reserved words
+         if (!['user', 'invite', 'gazebo', 'message', 'stats', 'groups', 'forums', 'archive', 'settings'].includes(rawSlug.toLowerCase())) {
+             
+             // Try to find a user with this username first (Case Insensitive)
+             const { data: profileData } = await supabase
+                .from('profiles')
+                .select('id')
+                .ilike('username', slug) // Use ilike for case-insensitive match
+                .maybeSingle();
+
+             if (profileData) {
+                 setSelectedProfileId(profileData.id);
+                 setView('profile');
+                 return;
+             }
+
+             // If no user found, assume it's a custom page
              setView('page');
              setPageSlug(slug);
              return;
@@ -198,6 +216,22 @@ const Main = () => {
 
       // Default
       if (path === '/') {
+          // Handle /?user=... query param with decoded values and case-insensitivity
+          if (usernameQuery) {
+             const decodedUsername = decodeURIComponent(usernameQuery);
+             const { data } = await supabase
+                .from('profiles')
+                .select('id')
+                .ilike('username', decodedUsername)
+                .maybeSingle();
+             
+             if (data) {
+                setSelectedProfileId(data.id);
+                setView('profile');
+                return;
+             }
+          }
+
           setView('feed');
           setSelectedProfileId(undefined);
           setSelectedPostId(undefined);
@@ -412,12 +446,17 @@ const handleMessageUser = (targetProfile: any) => {
 
   return (
     <div className="min-h-screen bg-[rgb(var(--color-background))]">
-      {/* 4a. RENDER SIDEBAR */}
-      <Sidebar 
+      {/* 4a. RENDER SIDEBARS */}
+	<LeftSidebar 
+        show={showLeftSidebar} 
+        onClose={() => setShowLeftSidebar(false)} 
+      />
+      <RightSidebar 
         show={showSidebar} 
         onClose={() => setShowSidebar(false)} 
         setView={setView} 
-        view={view} 
+        view={view}
+        onSignOut={signOut} 
       />
 
       <nav className="bg-[rgb(var(--color-surface))] border-b border-[rgb(var(--color-border))] sticky top-0 z-50 shadow-sm">
@@ -427,7 +466,7 @@ const handleMessageUser = (targetProfile: any) => {
             xmlns="http://www.w3.org/2000/svg" 
             viewBox={SVG_VIEWBOX} 
             className="w-[32px] h-[32px] cursor-pointer" 
-            onClick={() => setShowSidebar(true)} 
+			onClick={() => setShowLeftSidebar(true)}
           >
             <path d={SVG_PATH} fill="rgb(var(--color-primary))" />
           </svg>
@@ -449,8 +488,8 @@ const handleMessageUser = (targetProfile: any) => {
             <button onClick={() => { if (!profile?.username) return; navigate(`/?user=${profile.username}`); setSelectedProfileId(undefined); setView('profile'); }} className={`p-3 rounded-full transition ${view === 'profile' && !selectedProfileId ? 'bg-[rgba(var(--color-primary),0.1)] text-[rgb(var(--color-primary))]' : 'hover:bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text-secondary))]'}`}>
               <User size={20} />
             </button>
-            <button onClick={signOut} className="p-3 rounded-full hover:bg-[rgba(239,68,68,0.1)] text-red-600 transition">
-              <LogOut size={20} />
+			<button onClick={() => setShowSidebar(true)} className="p-3 rounded-full hover:bg-[rgb(var(--color-surface-hover))] text-[rgb(var(--color-text-secondary))] transition">
+              <Menu size={20} />
             </button>
           </div>
         </div>

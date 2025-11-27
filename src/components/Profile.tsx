@@ -182,6 +182,12 @@ export const Profile = ({ userId, initialPostId, onMessage, onSettings }: { user
       return url;
   };
 
+  // Helper to fix Supabase returning arrays for single relations
+  const formatPostData = (p: any) => ({
+    ...p,
+    original_post: Array.isArray(p.original_post) ? p.original_post[0] : p.original_post
+  });
+
   const { user } = useAuth();
   const targetUserId = userId || user?.id;
   const isOwnProfile = targetUserId === user?.id;
@@ -441,10 +447,10 @@ export const Profile = ({ userId, initialPostId, onMessage, onSettings }: { user
     if (!targetUserId) return;
     const { data } = await supabase
       .from('posts')
-      .select('*, profiles(*)')
+      .select('*, profiles(*), original_post:posts!repost_of(*, profiles(*))')
       .eq('user_id', targetUserId)
       .order('created_at', { ascending: false });
-    const loadedPosts = data || [];
+    const loadedPosts = (data || []).map(formatPostData)
     const postIds = loadedPosts.map(p => p.id);
     const { likeCounts, commentCounts } = await getPostCounts(postIds);
     const postsWithCounts = loadedPosts.map(post => ({
@@ -480,11 +486,12 @@ export const Profile = ({ userId, initialPostId, onMessage, onSettings }: { user
     const postIds = likeData.map(l => l.entity_id);
     const { data: postData } = await supabase
       .from('posts')
-      .select('*, profiles(*)')
+      // Added: original_post:posts!repost_of(*, profiles(*))
+      .select('*, profiles(*), original_post:posts!repost_of(*, profiles(*))')
       .in('id', postIds)
       .order('created_at', { ascending: false });
       
-    const loadedLikedPosts = postData || [];
+    const loadedLikedPosts = (postData || []).map(formatPostData);
     const newPostIds = loadedLikedPosts.map(p => p.id);
     const { likeCounts, commentCounts } = await getPostCounts(newPostIds);
     const likedPostsWithCounts = loadedLikedPosts.map(post => ({
@@ -542,9 +549,10 @@ export const Profile = ({ userId, initialPostId, onMessage, onSettings }: { user
 
       const channel = supabase.channel(`profile-${targetUserId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, async (payload) => {
         if (payload.new.user_id !== targetUserId) return;
-        const { data } = await supabase.from('posts').select('*, profiles(*)').eq('id', payload.new.id).single();
+        const { data } = await supabase.from('posts').select('*, profiles(*), original_post:posts!repost_of(*, profiles(*))').eq('id', payload.new.id).single();
         if (data) {
-          const postIds = [data.id];
+          const formattedData = formatPostData(data);
+          const postIds = [formattedData.id];
           const { likeCounts, commentCounts } = await getPostCounts(postIds);
           const newPost = {
             ...data,
@@ -560,9 +568,10 @@ export const Profile = ({ userId, initialPostId, onMessage, onSettings }: { user
       }).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'likes', filter: 'entity_type=eq.post' }, async (payload) => {
         if (payload.new.user_id === targetUserId) {
           // Add to likedPosts
-          const { data: postData } = await supabase.from('posts').select('*, profiles(*)').eq('id', payload.new.entity_id).single();
+          const { data: postData } = await supabase.from('posts').select('*, profiles(*), original_post:posts!repost_of(*, profiles(*))').eq('id', payload.new.entity_id).single();
           if (postData) {
-            const postIds = [postData.id];
+            const formattedData = formatPostData(postData);
+            const postIds = [formattedData.id];
             const { likeCounts, commentCounts } = await getPostCounts(postIds);
             const newPost = {
               ...postData,
@@ -605,11 +614,12 @@ export const Profile = ({ userId, initialPostId, onMessage, onSettings }: { user
           const fetchPost = async () => {
               const { data } = await supabase
                   .from('posts')
-                  .select('*, profiles(*)')
+                  .select('*, profiles(*), original_post:posts!repost_of(*, profiles(*))')
                   .eq('id', initialPostId)
                   .maybeSingle(); // Use maybeSingle for safety
               
               if (data) {
+                const formattedData = formatPostData(data);
                   // Default to 0 if counts fail to load for any reason
                   let lCount = 0;
                   let cCount = 0;
