@@ -203,6 +203,8 @@ export const Feed = () => {
   }, [user]);
 
   const loadPosts = useCallback(async () => {
+    if (!user?.id) return;
+    
     setPosts([]);
     setPostPage(0);
     setHasMorePosts(true);
@@ -220,7 +222,7 @@ export const Feed = () => {
     setPosts(postsWithCounts);
     if (postsWithCounts.length < POST_PAGE_SIZE) setHasMorePosts(false);
     fetchUserLikes(postsWithCounts);
-  }, [user, fetchUserLikes, getPostCounts]);
+  }, [user?.id, fetchUserLikes, getPostCounts]);
   
   const loadMorePosts = useCallback(async () => {
     if (isLoadingMorePosts || !hasMorePosts) return;
@@ -247,14 +249,21 @@ export const Feed = () => {
   }, [isLoadingMorePosts, hasMorePosts, postPage, user, fetchUserLikes, getPostCounts]);
 
   useEffect(() => {
+    if (!user?.id) return;
+    
     loadPosts();
-    const channel = supabase.channel('feed-updates').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, async (payload) => {
-      // Logic simplified: if it's a new post, just fetch and prepend.
+    const channel = supabase.channel('feed-updates')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, async (payload) => {
+      // Logic to fetch new post
       const { data } = await supabase.from('posts').select('*, profiles(*)').eq('id', payload.new.id).single();
-      if (data) setPosts(current => [{ ...data, like_count: 0, comment_count: 0 }, ...current]);
-    }).subscribe();
+      if (data) {
+          // Optional: Check if post belongs to a group I'm in or a user I follow before adding
+          setPosts(current => [{ ...data, like_count: 0, comment_count: 0 }, ...current]);
+      }
+    })
+    .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user, loadPosts]);
+  }, [user?.id, loadPosts]);
 
   useEffect(() => {
     const handleScroll = () => {
