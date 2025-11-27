@@ -10,7 +10,7 @@ import { Settings } from './components/Settings';
 import { CustomPage } from './components/CustomPage';
 import { Stats } from './components/Stats';
 import { Status, StatusArchive } from './components/Status';
-import { RightSidebar } from './components/Sidebar';
+import { LeftSidebar, RightSidebar } from './components/Sidebar';
 import { Notifications } from './components/Notifications'; 
 import { Groups } from './components/Groups';
 import { Forums } from './components/Forums';
@@ -32,6 +32,7 @@ const EVENT_THEMES = ["https://mux8.com/assets/audio/theme01.mp3", "https://mux8
 const Main = () => {
   const [view, setView] = useState<ViewType>('feed');
   const [showSidebar, setShowSidebar] = useState(false);
+	const [showLeftSidebar, setShowLeftSidebar] = useState(false);
   const [pageSlug, setPageSlug] = useState<string>('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>();
   const [showSearch, setShowSearch] = useState(false);
@@ -428,7 +429,7 @@ const handleMessageUser = (targetProfile: any) => {
             xmlns="http://www.w3.org/2000/svg" 
             viewBox={SVG_VIEWBOX} 
             className="w-[32px] h-[32px] cursor-pointer" 
-            onClick={() => setShowSidebar(true)} 
+			onClick={() => setShowLeftSidebar(true)}
           >
             <path d={SVG_PATH} fill="rgb(var(--color-primary))" />
           </svg>
